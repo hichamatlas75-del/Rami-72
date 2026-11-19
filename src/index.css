@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color-scheme: dark;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.felt-surface {
+  background-color: #0b3b27;
+  background-image:
+    radial-gradient(ellipse at 50% 45%, rgba(28, 114, 74, 0.34) 0%, rgba(10, 48, 32, 0.55) 60%, rgba(6, 22, 16, 0.92) 100%);
+}
+
+.card-paper {
+  background-color: #fdfbf7;
+  background-image: linear-gradient(145deg, #ffffff 0%, #f8f4ea 100%);
+}
+
+.card-back-fallback {
+  background-color: #0d1d38;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(212, 175, 55, 0.14) 0px,
+      rgba(212, 175, 55, 0.14) 1px,
+      transparent 1px,
+      transparent 8px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(212, 175, 55, 0.14) 0px,
+      rgba(212, 175, 55, 0.14) 1px,
+      transparent 1px,
+      transparent 8px
+    );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

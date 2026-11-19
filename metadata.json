@@ -1,0 +1,6 @@
+{
+  "name": "Salon Belote",
+  "description": "Jeu de Belote classique à quatre joueurs sur tapis vert parisien, avec enchères, atout, annonces Belote-Rebelote et intelligence tactique.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
