@@ -27,6 +27,17 @@ export function RoundModal({
   });
   const champion = sortedFinal[0];
 
+  // In intermediate round summaries, rank by round result first; at game over, rank by overall champion
+  const displayedStandings = isGameOver
+    ? sortedFinal
+    : [...result.standings].sort((a, b) => {
+        if (a.isWinner !== b.isWinner) return a.isWinner ? -1 : 1;
+        if (a.penaltyPoints !== b.penaltyPoints) {
+          return a.penaltyPoints - b.penaltyPoints;
+        }
+        return a.cumulativePenalty - b.cumulativePenalty;
+      });
+
   const headline = isGameOver
     ? champion.isHuman
       ? 'Vous remportez la partie'
@@ -42,7 +53,7 @@ export function RoundModal({
       aria-modal="true"
       aria-label={isGameOver ? 'Classement final' : `Fin de la manche ${result.roundNumber}`}
     >
-      <div className="w-full max-w-xl rounded-2xl border border-[#D4AF37]/30 bg-[#0D1E17] p-6 text-[#F5F2EB] shadow-[0_24px_60px_rgba(0,0,0,0.65)] sm:p-7">
+      <div className="w-full max-w-xl rounded-2xl border border-[#D4AF37]/30 bg-[#0D1E17] p-5 text-[#F5F2EB] shadow-[0_24px_60px_rgba(0,0,0,0.65)] sm:p-7">
         {/* Clean unboxed metadata */}
         <div className="flex flex-wrap items-center gap-2 text-xs text-[#A3B5AD]">
           <span>
@@ -69,8 +80,8 @@ export function RoundModal({
         </p>
 
         {/* Standings table */}
-        <div className="mt-5 overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
-          <table className="w-full text-sm">
+        <div className="mt-5 overflow-x-auto rounded-xl border border-white/10 bg-white/[0.02]">
+          <table className="w-full min-w-[440px] text-sm">
             <thead className="border-b border-white/10 bg-white/[0.03] text-xs text-[#9DB0A7]">
               <tr>
                 <th className="px-4 py-2.5 text-left font-medium">Joueur</th>
@@ -83,42 +94,56 @@ export function RoundModal({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 font-mono tabular-nums">
-              {sortedFinal.map((row) => (
-                <tr
-                  key={row.playerIndex}
-                  className={row.isWinner ? 'bg-[#D4AF37]/10' : ''}
-                >
-                  <td className="px-4 py-3 font-sans">
-                    <span
-                      className={`font-medium ${
-                        row.isHuman ? 'text-[#E5C158]' : 'text-[#F5F2EB]'
-                      }`}
-                    >
-                      {row.name}
-                    </span>
-                    {row.isWinner && (
-                      <span className="ml-2 text-xs text-[#E5C158]">· Gagnant</span>
-                    )}
-                    {totalRounds > 1 && (
-                      <span className="block text-[11px] text-[#94A99F]">
-                        {row.roundsWon} {row.roundsWon > 1 ? 'manches gagnées' : 'manche gagnée'}
+              {displayedStandings.map((row) => {
+                const isHighlighted = isGameOver
+                  ? row.playerIndex === champion.playerIndex
+                  : row.isWinner;
+                const badgeText = isGameOver
+                  ? totalRounds > 1
+                    ? '· Champion'
+                    : '· Gagnant'
+                  : '· Gagnant';
+
+                return (
+                  <tr
+                    key={row.playerIndex}
+                    className={isHighlighted ? 'bg-[#D4AF37]/10' : ''}
+                  >
+                    <td className="px-4 py-3 font-sans">
+                      <span
+                        className={`font-medium ${
+                          row.isHuman ? 'text-[#E5C158]' : 'text-[#F5F2EB]'
+                        }`}
+                      >
+                        {row.name}
                       </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-right text-xs text-[#C1CEC8]">
-                    {row.openedWith !== null ? `${row.openedWith} pts` : 'Non ouvert'}
-                  </td>
-                  <td className="px-3 py-3 text-right text-xs text-[#C1CEC8]">
-                    {row.cardsRemaining} {row.cardsRemaining > 1 ? 'cartes' : 'carte'}
-                  </td>
-                  <td className="px-3 py-3 text-right text-white">
-                    {row.penaltyPoints === 0 ? '0' : `+${row.penaltyPoints}`}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-[#E5C158]">
-                    {row.cumulativePenalty} pts
-                  </td>
-                </tr>
-              ))}
+                      {isHighlighted && (
+                        <span className="ml-2 text-xs text-[#E5C158]">
+                          {badgeText}
+                        </span>
+                      )}
+                      {totalRounds > 1 && (
+                        <span className="block text-[11px] text-[#94A99F]">
+                          {row.roundsWon}{' '}
+                          {row.roundsWon > 1 ? 'manches gagnées' : 'manche gagnée'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-[#C1CEC8]">
+                      {row.openedWith !== null ? `${row.openedWith} pts` : 'Non ouvert'}
+                    </td>
+                    <td className="px-3 py-3 text-right text-xs text-[#C1CEC8]">
+                      {row.cardsRemaining} {row.cardsRemaining > 1 ? 'cartes' : 'carte'}
+                    </td>
+                    <td className="px-3 py-3 text-right text-white">
+                      {row.penaltyPoints === 0 ? '0' : `+${row.penaltyPoints}`}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-[#E5C158]">
+                      {row.cumulativePenalty} pts
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

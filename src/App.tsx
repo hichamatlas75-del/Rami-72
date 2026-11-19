@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { TitleScreen } from './components/TitleScreen';
 import { GameTable } from './components/GameTable';
 import { Difficulty, PlayerCount, TotalRounds } from './game/types';
-import { salonAudio } from './game/sound';
+import { ramiAudio } from './game/sound';
 
 export default function App() {
   const [inGame, setInGame] = useState(false);
@@ -12,7 +12,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState(1);
 
   const handleStartGame = () => {
-    salonAudio.playDeal();
+    ramiAudio.playDeal();
     setSessionId((prev) => prev + 1);
     setInGame(true);
   };

@@ -1,6 +1,5 @@
 {
-  "name": "Salon Belote",
-  "description": "Jeu de Belote classique à quatre joueurs sur tapis vert parisien, avec enchères, atout, annonces Belote-Rebelote et intelligence tactique.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "Rami 72",
+  "description": "Jeu de Rami 72 marocain de 2 à 4 joueurs : suites de même couleur, trios et carrés, seuil d'ouverture à 72 points avec surenchère, complétion et échange de Jokers.",
+  "requestFramePermissions": []
 }

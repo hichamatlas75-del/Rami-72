@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Card, RANK_LABEL, Rank, SUIT_META, Suit } from '../game/types';
-
-export const CARD_BACK_IMAGE = '/src/assets/images/card_back_pattern_1795129514697.jpg';
+import cardBackImage from '../assets/images/card_back_pattern.jpg';
 
 export function SuitIcon({
   suit,
@@ -63,7 +62,7 @@ export function CardBack({ size = 'sm', className = '' }: CardBackProps) {
       <div className="relative h-full w-full overflow-hidden rounded-[inherit] card-back-fallback">
         {!imgFailed ? (
           <img
-            src={CARD_BACK_IMAGE}
+            src={cardBackImage}
             alt="Dos de carte Rami 72"
             referrerPolicy="no-referrer"
             onError={() => setImgFailed(true)}

@@ -387,81 +387,107 @@ export function trySwapJokerInMeld(
 // AI MELD OPTIMIZER & TACTICAL DECISION ENGINE
 // ============================================================================
 
-interface CandidateMeld {
-  cardIds: string[];
-  cards: Card[];
-  meld: TableMeld;
+interface CanonicalCandidate {
+  type: MeldType;
+  realKeys: string[];
+  jokerCount: number;
+  points: number;
+  signature: string;
 }
 
-function generateCandidateMelds(
+function realCardKey(card: Card): string {
+  return `${card.rank}-${card.suit}`;
+}
+
+function generateCanonicalCandidates(
   hand: Card[],
   ownerIndex: number
-): CandidateMeld[] {
-  const realCards = hand.filter((c) => !c.isJoker);
-  const jokers = hand.filter((c) => c.isJoker);
-  const seenKeys = new Set<string>();
-  const results: CandidateMeld[] = [];
+): { candidates: CanonicalCandidate[]; cardsByKey: Map<string, Card[]> } {
+  const cardsByKey = new Map<string, Card[]>();
+  const uniqueRealCards: Card[] = [];
 
-  const register = (cards: Card[], type: MeldType) => {
-    const key = [...cards]
-      .map((c) => c.id)
-      .sort()
-      .join('|');
-    if (seenKeys.has(key)) return;
-    const meld = validateMeld(cards, ownerIndex, type);
-    if (meld) {
-      seenKeys.add(key);
-      results.push({
-        cardIds: cards.map((c) => c.id),
-        cards,
-        meld,
-      });
+  for (const c of hand) {
+    const key = c.isJoker ? 'JOKER' : realCardKey(c);
+    const list = cardsByKey.get(key) ?? [];
+    if (!c.isJoker && list.length === 0) {
+      uniqueRealCards.push(c);
     }
+    list.push(c);
+    cardsByKey.set(key, list);
+  }
+
+  const jokers = cardsByKey.get('JOKER') ?? [];
+  const jokerCount = jokers.length;
+  const seenSignatures = new Set<string>();
+  const baseCandidates: CanonicalCandidate[] = [];
+
+  const register = (realCards: Card[], usedJokers: number, type: MeldType) => {
+    const sampleCards = [...realCards, ...jokers.slice(0, usedJokers)];
+    const meld = validateMeld(sampleCards, ownerIndex, type);
+    if (!meld) return;
+
+    const signature = `${type}:${meld.slots
+      .map(
+        (s) =>
+          `${s.effectiveRank}-${s.effectiveSuit}-${s.card.isJoker ? 'J' : 'R'}`
+      )
+      .join('|')}`;
+    if (seenSignatures.has(signature)) return;
+    seenSignatures.add(signature);
+
+    baseCandidates.push({
+      type,
+      realKeys: realCards.map(realCardKey),
+      jokerCount: usedJokers,
+      points: meld.points,
+      signature,
+    });
   };
 
   // 1. Candidate Sets (by rank, distinct suits)
   const byRank = new Map<Rank, Card[]>();
-  for (const c of realCards) {
+  for (const c of uniqueRealCards) {
     const list = byRank.get(c.rank!) ?? [];
-    // Keep at most one card per suit for a given rank candidate pool
-    if (!list.some((existing) => existing.suit === c.suit)) {
-      list.push(c);
-    }
+    list.push(c);
     byRank.set(c.rank!, list);
   }
 
   for (const [, group] of byRank.entries()) {
     // 4-card pure set
     if (group.length === 4) {
-      register(group, 'set');
+      register(group, 0, 'set');
     }
-    // 3-card pure sets
+    // 3-card pure sets & 3-card + 1 joker sets
     if (group.length >= 3) {
       for (let i = 0; i < group.length; i++) {
         for (let j = i + 1; j < group.length; j++) {
           for (let k = j + 1; k < group.length; k++) {
-            register([group[i], group[j], group[k]], 'set');
+            const trio = [group[i], group[j], group[k]];
+            register(trio, 0, 'set');
+            if (jokerCount >= 1) {
+              register(trio, 1, 'set');
+            }
           }
         }
       }
     }
-    // 2-card + 1 joker sets
-    if (group.length >= 2 && jokers.length >= 1) {
+    // 2-card + 1 or 2 joker sets
+    if (group.length >= 2 && jokerCount >= 1) {
       for (let i = 0; i < group.length; i++) {
         for (let j = i + 1; j < group.length; j++) {
-          register([group[i], group[j], jokers[0]], 'set');
+          const pair = [group[i], group[j]];
+          register(pair, 1, 'set');
+          if (jokerCount >= 2) {
+            register(pair, 2, 'set');
+          }
         }
       }
-    }
-    // 3-card + 1 joker sets
-    if (group.length === 3 && jokers.length >= 1) {
-      register([...group, jokers[0]], 'set');
     }
   }
 
   // 2. Candidate Runs (by suit, contiguous windows)
   const bySuit = new Map<Suit, Card[]>();
-  for (const c of realCards) {
+  for (const c of uniqueRealCards) {
     const list = bySuit.get(c.suit!) ?? [];
     list.push(c);
     bySuit.set(c.suit!, list);
@@ -469,68 +495,87 @@ function generateCandidateMelds(
 
   for (const [, suitCards] of bySuit.entries()) {
     for (const aceHigh of [true, false]) {
-      // Unique by value (if duplicate rank in same suit, keep first)
       const valToCard = new Map<number, Card>();
       for (const c of suitCards) {
         const v = c.rank === 'A' ? (aceHigh ? 14 : 1) : RANK_TO_LOW_VAL[c.rank!];
-        if (!valToCard.has(v)) valToCard.set(v, c);
+        valToCard.set(v, c);
       }
 
       const vals = Array.from(valToCard.keys()).sort((a, b) => a - b);
       if (vals.length < 2) continue;
 
-      // Test every sub-slice of sorted distinct values
       for (let start = 0; start < vals.length; start++) {
         for (let end = start + 1; end < vals.length; end++) {
           const subset = vals.slice(start, end + 1);
           const span = subset[subset.length - 1] - subset[0] + 1;
           if (span > 13) break;
+
           const missing = span - subset.length;
-          if (missing > jokers.length) continue;
+          if (missing > jokerCount) continue;
 
           const baseCards = subset.map((v) => valToCard.get(v)!);
-          // Exact fill
-          if (span >= 3 && missing <= baseCards.length) {
-            register([...baseCards, ...jokers.slice(0, missing)], 'run');
-          }
-          // Fill + 1 extra joker (e.g. 2 adjacent cards + 1 joker => 3-card run)
-          if (missing + 1 <= jokers.length && span + 1 >= 3 && missing + 1 <= baseCards.length) {
-            register([...baseCards, ...jokers.slice(0, missing + 1)], 'run');
+          const maxExtra = Math.min(
+            jokerCount - missing,
+            baseCards.length - missing,
+            13 - span
+          );
+          for (let extra = 0; extra <= maxExtra; extra++) {
+            if (span + extra >= 3) {
+              register(baseCards, missing + extra, 'run');
+            }
           }
         }
       }
     }
   }
 
-  // Sort candidates by points descending for rapid branch-and-bound pruning
-  results.sort((a, b) => b.meld.points - a.meld.points);
-  return results.slice(0, 48);
+  // Sort by points descending for rapid branch-and-bound pruning
+  baseCandidates.sort((a, b) => b.points - a.points);
+  const capped = baseCandidates.slice(0, 120);
+
+  // Duplicate candidates when hand actually holds 2 copies of every needed card & enough jokers
+  const expanded: CanonicalCandidate[] = [];
+  for (const cand of capped) {
+    expanded.push(cand);
+    const canRepeat =
+      cand.realKeys.every((k) => (cardsByKey.get(k)?.length ?? 0) >= 2) &&
+      jokerCount >= cand.jokerCount * 2;
+    if (canRepeat) {
+      expanded.push(cand);
+    }
+  }
+
+  return { candidates: expanded, cardsByKey };
 }
 
 export function findBestDisjointMelds(
   hand: Card[],
   ownerIndex: number
 ): { melds: TableMeld[]; totalPoints: number; usedCardIds: Set<string> } {
-  const candidates = generateCandidateMelds(hand, ownerIndex);
+  const { candidates, cardsByKey } = generateCanonicalCandidates(hand, ownerIndex);
   if (candidates.length === 0) {
     return { melds: [], totalPoints: 0, usedCardIds: new Set() };
   }
 
+  const remCounts = new Map<string, number>();
+  for (const [k, list] of cardsByKey.entries()) {
+    remCounts.set(k, list.length);
+  }
+
   let bestScore = 0;
-  let bestChoice: CandidateMeld[] = [];
-  const used = new Set<string>();
-  const current: CandidateMeld[] = [];
+  let bestChoice: CanonicalCandidate[] = [];
+  const current: CanonicalCandidate[] = [];
   let visitedNodes = 0;
 
   // Precompute suffix upper bound
   const suffixMax = new Array<number>(candidates.length + 1).fill(0);
   for (let i = candidates.length - 1; i >= 0; i--) {
-    suffixMax[i] = suffixMax[i + 1] + candidates[i].meld.points;
+    suffixMax[i] = suffixMax[i + 1] + candidates[i].points;
   }
 
   const dfs = (idx: number, currentScore: number) => {
     visitedNodes += 1;
-    if (visitedNodes > 1800) return;
+    if (visitedNodes > 4000) return;
 
     if (currentScore > bestScore) {
       bestScore = currentScore;
@@ -540,20 +585,26 @@ export function findBestDisjointMelds(
     if (currentScore + suffixMax[idx] <= bestScore) return;
 
     const cand = candidates[idx];
-    let overlaps = false;
-    for (const id of cand.cardIds) {
-      if (used.has(id)) {
-        overlaps = true;
-        break;
-      }
-    }
+    const hasJokers = (remCounts.get('JOKER') ?? 0) >= cand.jokerCount;
+    const hasReal =
+      hasJokers && cand.realKeys.every((k) => (remCounts.get(k) ?? 0) >= 1);
 
-    if (!overlaps) {
-      for (const id of cand.cardIds) used.add(id);
+    if (hasReal) {
+      if (cand.jokerCount > 0) {
+        remCounts.set('JOKER', remCounts.get('JOKER')! - cand.jokerCount);
+      }
+      for (const k of cand.realKeys) {
+        remCounts.set(k, remCounts.get(k)! - 1);
+      }
       current.push(cand);
-      dfs(idx + 1, currentScore + cand.meld.points);
+      dfs(idx + 1, currentScore + cand.points);
       current.pop();
-      for (const id of cand.cardIds) used.delete(id);
+      for (const k of cand.realKeys) {
+        remCounts.set(k, remCounts.get(k)! + 1);
+      }
+      if (cand.jokerCount > 0) {
+        remCounts.set('JOKER', remCounts.get('JOKER')! + cand.jokerCount);
+      }
     }
 
     dfs(idx + 1, currentScore);
@@ -561,13 +612,35 @@ export function findBestDisjointMelds(
 
   dfs(0, 0);
 
+  // Materialize canonical choices into concrete disjoint Card objects
+  const pool = new Map<string, Card[]>();
+  for (const [k, list] of cardsByKey.entries()) {
+    pool.set(k, [...list]);
+  }
+
+  const melds: TableMeld[] = [];
   const usedCardIds = new Set<string>();
-  for (const c of bestChoice) {
-    for (const id of c.cardIds) usedCardIds.add(id);
+
+  for (const cand of bestChoice) {
+    const chosenCards: Card[] = [];
+    for (const k of cand.realKeys) {
+      const card = pool.get(k)!.pop()!;
+      chosenCards.push(card);
+      usedCardIds.add(card.id);
+    }
+    for (let j = 0; j < cand.jokerCount; j++) {
+      const joker = pool.get('JOKER')!.pop()!;
+      chosenCards.push(joker);
+      usedCardIds.add(joker.id);
+    }
+    const built = validateMeld(chosenCards, ownerIndex, cand.type);
+    if (built) {
+      melds.push(built);
+    }
   }
 
   return {
-    melds: bestChoice.map((c) => c.meld),
+    melds,
     totalPoints: bestScore,
     usedCardIds,
   };

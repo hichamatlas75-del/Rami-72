@@ -1,4 +1,4 @@
-class SalonAudio {
+class RamiAudio {
   private ctx: AudioContext | null = null;
   private enabled = true;
 
@@ -76,7 +76,7 @@ class SalonAudio {
     });
   }
 
-  public playBidTake(): void {
+  public playMeld(): void {
     const ctx = this.getContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -94,43 +94,7 @@ class SalonAudio {
     });
   }
 
-  public playPass(): void {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(290, now);
-    osc.frequency.exponentialRampToValueAtTime(220, now + 0.09);
-    gain.gain.setValueAtTime(0.04, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.11);
-  }
-
-  public playTrickWin(isOurs: boolean): void {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const notes = isOurs ? [523.25, 659.25] : [349.23, 311.13];
-    notes.forEach((freq, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, now + idx * 0.065);
-      gain.gain.setValueAtTime(0.065, now + idx * 0.065);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.065 + 0.22);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + idx * 0.065);
-      osc.stop(now + idx * 0.065 + 0.24);
-    });
-  }
-
-  public playBelote(): void {
+  public playOpen72(): void {
     const ctx = this.getContext();
     if (!ctx) return;
     const now = ctx.currentTime;
@@ -168,4 +132,4 @@ class SalonAudio {
   }
 }
 
-export const salonAudio = new SalonAudio();
+export const ramiAudio = new RamiAudio();

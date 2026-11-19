@@ -6,8 +6,7 @@ import {
   TotalRounds,
 } from '../game/types';
 import { SuitIcon } from './PlayingCard';
-
-const HERO_IMAGE = '/src/assets/images/salon_hero_cards_1795129514322.jpg';
+import heroCardsImage from '../assets/images/rami_hero_cards.jpg';
 
 interface TitleScreenProps {
   playerCount: PlayerCount;
@@ -191,8 +190,8 @@ export function TitleScreen({
 
               {/* Difficulty selector */}
               <div>
-                <div className="mb-2 flex items-baseline justify-between gap-4">
-                  <span className="text-sm font-medium text-[#E4ECE8]">
+                <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                  <span className="text-sm font-medium text-[#E4ECE8] shrink-0">
                     Niveau des adversaires
                   </span>
                   <span className="text-xs text-[#98ABA3]">
@@ -244,7 +243,7 @@ export function TitleScreen({
           <div className="relative overflow-hidden rounded-2xl border border-white/12 bg-[#0E281D] lg:col-span-6">
             {!heroFailed ? (
               <img
-                src={HERO_IMAGE}
+                src={heroCardsImage}
                 alt="Cartes de Rami disposées sur un tapis de feutre vert émeraude"
                 referrerPolicy="no-referrer"
                 onError={() => setHeroFailed(true)}
