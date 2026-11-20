@@ -5,6 +5,7 @@ import {
   createDoubleDeck,
   decideAIDrawSource,
   findBestDisjointMelds,
+  planLayoffs,
   sortHand,
   tryExtendTableMeld,
   trySwapJokerInMeld,
@@ -799,25 +800,40 @@ export function useRami72Game(params: {
             if (cueKind === 'snap') cueKind = 'meld';
           }
 
-          let extendedAny = true;
-          while (extendedAny && hand.length > 0) {
-            extendedAny = false;
-            for (let cIdx = 0; cIdx < hand.length; cIdx++) {
-              const card = hand[cIdx];
-              if (card.isJoker && hand.length > 2) continue;
-
-              for (let mIdx = 0; mIdx < tableMelds.length; mIdx++) {
-                const extended = tryExtendTableMeld(tableMelds[mIdx], [card]);
-                if (extended) {
-                  tableMelds[mIdx] = extended;
-                  hand.splice(cIdx, 1);
-                  extendedAny = true;
-                  if (!actionNote) actionNote = 'Complète le tapis';
-                  if (cueKind === 'snap') cueKind = 'meld';
-                  break;
-                }
+          if (difficulty !== 'detente') {
+            const plan = planLayoffs(hand, tableMelds);
+            if (plan.actions.length > 0) {
+              tableMelds = plan.melds;
+              hand = plan.hand;
+              const didSwap = plan.actions.some((a) => a.kind === 'swap');
+              if (!actionNote) {
+                actionNote = didSwap ? 'Récupère un Joker' : 'Complète le tapis';
               }
-              if (extendedAny) break;
+              if (cueKind === 'snap') {
+                cueKind = didSwap ? 'open72' : 'meld';
+              }
+            }
+          } else {
+            let extendedAny = true;
+            while (extendedAny && hand.length > 0) {
+              extendedAny = false;
+              for (let cIdx = 0; cIdx < hand.length; cIdx++) {
+                const card = hand[cIdx];
+                if (card.isJoker) continue;
+
+                for (let mIdx = 0; mIdx < tableMelds.length; mIdx++) {
+                  const extended = tryExtendTableMeld(tableMelds[mIdx], [card]);
+                  if (extended) {
+                    tableMelds[mIdx] = extended;
+                    hand.splice(cIdx, 1);
+                    extendedAny = true;
+                    if (!actionNote) actionNote = 'Complète le tapis';
+                    if (cueKind === 'snap') cueKind = 'meld';
+                    break;
+                  }
+                }
+                if (extendedAny) break;
+              }
             }
           }
         }
@@ -839,12 +855,17 @@ export function useRami72Game(params: {
           return finishRoundState(baseUpdated, aiIdx, nextHands, totalRounds);
         }
 
+        const opponentMinHandSize = Math.min(
+          ...prev.hands.filter((_, idx) => idx !== aiIdx).map((h) => h.length)
+        );
         const discardCard = chooseAIDiscard({
           hand,
           forbiddenDiscardId: prev.drawnFromDiscardId,
           tableMelds,
           difficulty,
           playerIndex: aiIdx,
+          discardPile: prev.discard,
+          opponentMinHandSize,
         });
 
         const remainingAfterDiscard = hand.filter((c) => c.id !== discardCard.id);

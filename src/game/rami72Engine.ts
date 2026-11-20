@@ -9,56 +9,41 @@ import {
   TableMeld,
 } from './types';
 
+// ============================================================================
+// CONSTANTES
+// ============================================================================
+
 export const ALL_SUITS: Suit[] = ['spades', 'hearts', 'clubs', 'diamonds'];
 
 export const ALL_RANKS: Rank[] = [
-  'A',
-  '2',
-  '3',
-  '4',
-  '5',
-  '6',
-  '7',
-  '8',
-  '9',
-  '10',
-  'V',
-  'D',
-  'R',
+  'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'V', 'D', 'R',
 ];
 
 const RANK_TO_LOW_VAL: Record<Rank, number> = {
-  A: 1,
-  '2': 2,
-  '3': 3,
-  '4': 4,
-  '5': 5,
-  '6': 6,
-  '7': 7,
-  '8': 8,
-  '9': 9,
-  '10': 10,
-  V: 11,
-  D: 12,
-  R: 13,
+  A: 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
+  '8': 8, '9': 9, '10': 10, V: 11, D: 12, R: 13,
 };
 
 const VAL_TO_RANK: Record<number, Rank> = {
-  1: 'A',
-  2: '2',
-  3: '3',
-  4: '4',
-  5: '5',
-  6: '6',
-  7: '7',
-  8: '8',
-  9: '9',
-  10: '10',
-  11: 'V',
-  12: 'D',
-  13: 'R',
-  14: 'A',
+  1: 'A', 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7',
+  8: '8', 9: '9', 10: '10', 11: 'V', 12: 'D', 13: 'R', 14: 'A',
 };
+
+const SUIT_INDEX: Record<Suit, number> = {
+  spades: 0,
+  hearts: 1,
+  clubs: 2,
+  diamonds: 3,
+};
+
+/** Index 0..51 d'une carte réelle (couleur * 13 + valeur basse - 1). */
+function cardKeyIndex(card: Card): number {
+  return SUIT_INDEX[card.suit!] * 13 + RANK_TO_LOW_VAL[card.rank!] - 1;
+}
+
+// ============================================================================
+// IDS, RNG, PAQUET
+// ============================================================================
 
 let meldSeqCounter = 1;
 export function nextMeldId(prefix = 'meld'): string {
@@ -66,7 +51,29 @@ export function nextMeldId(prefix = 'meld'): string {
   return `${prefix}-${Date.now().toString(36)}-${meldSeqCounter}`;
 }
 
-export function createDoubleDeck(): Card[] {
+export type Rng = () => number;
+
+/** RNG déterministe (tests, replays, parties "seed" partageables). */
+export function mulberry32(seed: number): Rng {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function shuffleInPlace<T>(arr: T[], rng: Rng = Math.random): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+export function createDoubleDeck(rng: Rng = Math.random): Card[] {
   const deck: Card[] = [];
   for (const deckIndex of [0, 1] as const) {
     for (const suit of ALL_SUITS) {
@@ -80,31 +87,22 @@ export function createDoubleDeck(): Card[] {
         });
       }
     }
-    // 2 Jokers per 54-card deck => 4 Jokers total (108 cards)
-    deck.push({
-      id: `d${deckIndex}-joker-a`,
-      deckIndex,
-      isJoker: true,
-    });
-    deck.push({
-      id: `d${deckIndex}-joker-b`,
-      deckIndex,
-      isJoker: true,
-    });
+    // 2 jokers par paquet de 54 => 4 jokers au total (108 cartes)
+    deck.push({ id: `d${deckIndex}-joker-a`, deckIndex, isJoker: true });
+    deck.push({ id: `d${deckIndex}-joker-b`, deckIndex, isJoker: true });
   }
-
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-  return deck;
+  return shuffleInPlace(deck, rng);
 }
 
+// ============================================================================
+// POINTS
+// ============================================================================
+
 export function getSequenceValuePoints(seqVal: number): number {
-  if (seqVal === 1) return 1; // Low Ace in A-2-3
-  if (seqVal === 14) return 11; // High Ace in D-R-A
+  if (seqVal === 1) return 1; // As bas (A-2-3)
+  if (seqVal === 14) return 11; // As haut (D-R-A)
   if (seqVal >= 10) return 10; // 10, V, D, R
-  return seqVal; // 2..9
+  return seqVal;
 }
 
 export function getSetRankPoints(rank: Rank): number {
@@ -129,8 +127,8 @@ export function sortHand(hand: Card[], mode: SortMode): Card[] {
     if (!a.isJoker && b.isJoker) return -1;
     if (a.isJoker && b.isJoker) return a.id.localeCompare(b.id);
 
-    const suitA = ALL_SUITS.indexOf(a.suit!);
-    const suitB = ALL_SUITS.indexOf(b.suit!);
+    const suitA = SUIT_INDEX[a.suit!];
+    const suitB = SUIT_INDEX[b.suit!];
     const valA = RANK_TO_LOW_VAL[a.rank!];
     const valB = RANK_TO_LOW_VAL[b.rank!];
 
@@ -139,13 +137,15 @@ export function sortHand(hand: Card[], mode: SortMode): Card[] {
       if (valA !== valB) return valA - valB;
       return a.deckIndex - b.deckIndex;
     }
-
-    // mode === 'rank'
     if (valA !== valB) return valA - valB;
     if (suitA !== suitB) return suitA - suitB;
     return a.deckIndex - b.deckIndex;
   });
 }
+
+// ============================================================================
+// VALIDATION DES COMBINAISONS
+// ============================================================================
 
 function tryBuildSet(
   cards: Card[],
@@ -157,7 +157,7 @@ function tryBuildSet(
   const realCards = cards.filter((c) => !c.isJoker);
   const jokers = cards.filter((c) => c.isJoker);
 
-  // Require at least 2 real cards in a set so rank is unambiguous and balanced
+  // Au moins 2 vraies cartes : le rang reste non ambigu
   if (realCards.length < 2) return null;
 
   const targetRank = realCards[0].rank!;
@@ -165,7 +165,7 @@ function tryBuildSet(
 
   for (const c of realCards) {
     if (c.rank !== targetRank) return null;
-    if (seenSuits.has(c.suit!)) return null; // Duplicate suit forbidden in Trio/Carré
+    if (seenSuits.has(c.suit!)) return null; // couleur en double interdite
     seenSuits.add(c.suit!);
   }
 
@@ -176,15 +176,13 @@ function tryBuildSet(
   const seqVal = targetRank === 'A' ? 14 : RANK_TO_LOW_VAL[targetRank];
 
   const slots: MeldSlot[] = [
-    ...realCards
-      .sort((a, b) => ALL_SUITS.indexOf(a.suit!) - ALL_SUITS.indexOf(b.suit!))
-      .map((c) => ({
-        card: c,
-        effectiveRank: targetRank,
-        effectiveSuit: c.suit!,
-        sequenceValue: seqVal,
-        points: ptsPerCard,
-      })),
+    ...realCards.map((c) => ({
+      card: c,
+      effectiveRank: targetRank,
+      effectiveSuit: c.suit!,
+      sequenceValue: seqVal,
+      points: ptsPerCard,
+    })),
     ...jokers.map((j, idx) => ({
       card: j,
       effectiveRank: targetRank,
@@ -194,10 +192,8 @@ function tryBuildSet(
     })),
   ];
 
-  // Keep consistent suit visual ordering
   slots.sort(
-    (a, b) =>
-      ALL_SUITS.indexOf(a.effectiveSuit) - ALL_SUITS.indexOf(b.effectiveSuit)
+    (a, b) => SUIT_INDEX[a.effectiveSuit] - SUIT_INDEX[b.effectiveSuit]
   );
 
   return {
@@ -220,7 +216,7 @@ function tryBuildRunWithAceMode(
   const realCards = cards.filter((c) => !c.isJoker);
   const jokers = cards.filter((c) => c.isJoker);
 
-  // Require at least 2 real cards (and never more jokers than real cards)
+  // Au moins 2 vraies cartes, jamais plus de jokers que de vraies cartes
   if (realCards.length < 2 || jokers.length > realCards.length) return null;
 
   const suit = realCards[0].suit!;
@@ -229,7 +225,7 @@ function tryBuildRunWithAceMode(
   for (const c of realCards) {
     if (c.suit !== suit) return null;
     const val = c.rank === 'A' ? (aceHigh ? 14 : 1) : RANK_TO_LOW_VAL[c.rank!];
-    if (valMap.has(val)) return null; // Duplicate rank in same suit not allowed in a run
+    if (valMap.has(val)) return null; // même rang deux fois dans une suite
     valMap.set(val, c);
   }
 
@@ -237,16 +233,14 @@ function tryBuildRunWithAceMode(
   const minReal = realVals[0];
   const maxReal = realVals[realVals.length - 1];
 
-  // Ensure sequence doesn't span both low Ace (1) and high Ace (14) simultaneously
   const span = maxReal - minReal + 1;
-  if (span > 13) return null;
-
   const interiorGaps = span - realVals.length;
   if (jokers.length < interiorGaps) return null;
 
   let extraJokers = jokers.length - interiorGaps;
 
-  // Prefer extending upwards first (maximizes point value, e.g. D-R-Joker => D-R-A = 31 pts)
+  // Les jokers en trop prolongent d'abord vers le haut (maximise les points :
+  // D-R-Joker => D-R-A = 31 pts), puis vers le bas.
   let endVal = maxReal;
   let startVal = minReal;
   const maxAllowed = startVal === 1 ? 13 : 14;
@@ -269,26 +263,13 @@ function tryBuildRunWithAceMode(
 
   for (let v = startVal; v <= endVal; v++) {
     const realCard = valMap.get(v);
-    const effRank = VAL_TO_RANK[v];
-    const pts = getSequenceValuePoints(v);
-    if (realCard) {
-      slots.push({
-        card: realCard,
-        effectiveRank: effRank,
-        effectiveSuit: suit,
-        sequenceValue: v,
-        points: pts,
-      });
-    } else {
-      slots.push({
-        card: jokers[jokerCursor],
-        effectiveRank: effRank,
-        effectiveSuit: suit,
-        sequenceValue: v,
-        points: pts,
-      });
-      jokerCursor += 1;
-    }
+    slots.push({
+      card: realCard ?? jokers[jokerCursor++],
+      effectiveRank: VAL_TO_RANK[v],
+      effectiveSuit: suit,
+      sequenceValue: v,
+      points: getSequenceValuePoints(v),
+    });
   }
 
   return {
@@ -355,13 +336,10 @@ export function trySwapJokerInMeld(
     const newSlots = meld.slots.map((s, idx) =>
       idx === slotIdx ? { ...s, card } : s
     );
-    return {
-      updatedMeld: { ...meld, slots: newSlots },
-      retrievedJoker,
-    };
+    return { updatedMeld: { ...meld, slots: newSlots }, retrievedJoker };
   }
 
-  // For a set (Trio/Carré): if a Joker is present, player can swap with ANY missing suit of the same rank
+  // Trio/Carré : on peut remplacer un joker par n'importe quelle couleur manquante
   const jokerIdx = meld.slots.findIndex((s) => s.card.isJoker);
   if (jokerIdx === -1) return null;
 
@@ -384,123 +362,112 @@ export function trySwapJokerInMeld(
 }
 
 // ============================================================================
-// AI MELD OPTIMIZER & TACTICAL DECISION ENGINE
+// OPTIMISEUR DE COMBINAISONS (exact, mémoïsé)
 // ============================================================================
 
-interface CanonicalCandidate {
+interface Candidate {
   type: MeldType;
-  realKeys: string[];
+  keys: number[]; // index de vraies cartes (0..51), chacun une seule fois
   jokerCount: number;
   points: number;
-  signature: string;
+  value: number; // points*10 - jokers : à points égaux on garde les jokers
 }
 
-function realCardKey(card: Card): string {
-  return `${card.rank}-${card.suit}`;
+interface HandAnalysis {
+  candidates: Candidate[];
+  counts: number[]; // 52 cases
+  jokers: Card[];
+  pool: Map<number, Card[]>;
 }
 
-function generateCanonicalCandidates(
-  hand: Card[],
-  ownerIndex: number
-): { candidates: CanonicalCandidate[]; cardsByKey: Map<string, Card[]> } {
-  const cardsByKey = new Map<string, Card[]>();
-  const uniqueRealCards: Card[] = [];
+function analyzeHand(hand: Card[], ownerIndex: number): HandAnalysis {
+  const counts = new Array<number>(52).fill(0);
+  const reps = new Map<number, Card>();
+  const pool = new Map<number, Card[]>();
+  const jokers: Card[] = [];
 
   for (const c of hand) {
-    const key = c.isJoker ? 'JOKER' : realCardKey(c);
-    const list = cardsByKey.get(key) ?? [];
-    if (!c.isJoker && list.length === 0) {
-      uniqueRealCards.push(c);
+    if (c.isJoker) {
+      jokers.push(c);
+      continue;
     }
+    const k = cardKeyIndex(c);
+    counts[k] += 1;
+    if (!reps.has(k)) reps.set(k, c);
+    const list = pool.get(k) ?? [];
     list.push(c);
-    cardsByKey.set(key, list);
+    pool.set(k, list);
   }
 
-  const jokers = cardsByKey.get('JOKER') ?? [];
   const jokerCount = jokers.length;
-  const seenSignatures = new Set<string>();
-  const baseCandidates: CanonicalCandidate[] = [];
+  const seen = new Set<string>();
+  const out: Candidate[] = [];
 
   const register = (realCards: Card[], usedJokers: number, type: MeldType) => {
-    const sampleCards = [...realCards, ...jokers.slice(0, usedJokers)];
-    const meld = validateMeld(sampleCards, ownerIndex, type);
+    const meld = validateMeld(
+      [...realCards, ...jokers.slice(0, usedJokers)],
+      ownerIndex,
+      type
+    );
     if (!meld) return;
-
     const signature = `${type}:${meld.slots
-      .map(
-        (s) =>
-          `${s.effectiveRank}-${s.effectiveSuit}-${s.card.isJoker ? 'J' : 'R'}`
-      )
+      .map((s) => `${s.effectiveRank}-${s.effectiveSuit}-${s.card.isJoker ? 'J' : 'R'}`)
       .join('|')}`;
-    if (seenSignatures.has(signature)) return;
-    seenSignatures.add(signature);
-
-    baseCandidates.push({
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    out.push({
       type,
-      realKeys: realCards.map(realCardKey),
+      keys: realCards.map(cardKeyIndex),
       jokerCount: usedJokers,
       points: meld.points,
-      signature,
+      value: meld.points * 10 - usedJokers,
     });
   };
 
-  // 1. Candidate Sets (by rank, distinct suits)
-  const byRank = new Map<Rank, Card[]>();
-  for (const c of uniqueRealCards) {
-    const list = byRank.get(c.rank!) ?? [];
-    list.push(c);
-    byRank.set(c.rank!, list);
-  }
+  const uniqueReal = Array.from(reps.values());
 
-  for (const [, group] of byRank.entries()) {
-    // 4-card pure set
-    if (group.length === 4) {
-      register(group, 0, 'set');
-    }
-    // 3-card pure sets & 3-card + 1 joker sets
+  // --- Sets (même rang, couleurs distinctes)
+  const byRank = new Map<Rank, Card[]>();
+  for (const c of uniqueReal) {
+    const l = byRank.get(c.rank!) ?? [];
+    l.push(c);
+    byRank.set(c.rank!, l);
+  }
+  for (const group of byRank.values()) {
+    if (group.length === 4) register(group, 0, 'set');
     if (group.length >= 3) {
-      for (let i = 0; i < group.length; i++) {
-        for (let j = i + 1; j < group.length; j++) {
+      for (let i = 0; i < group.length; i++)
+        for (let j = i + 1; j < group.length; j++)
           for (let k = j + 1; k < group.length; k++) {
             const trio = [group[i], group[j], group[k]];
             register(trio, 0, 'set');
-            if (jokerCount >= 1) {
-              register(trio, 1, 'set');
-            }
+            if (jokerCount >= 1) register(trio, 1, 'set');
           }
-        }
-      }
     }
-    // 2-card + 1 or 2 joker sets
     if (group.length >= 2 && jokerCount >= 1) {
-      for (let i = 0; i < group.length; i++) {
+      for (let i = 0; i < group.length; i++)
         for (let j = i + 1; j < group.length; j++) {
           const pair = [group[i], group[j]];
           register(pair, 1, 'set');
-          if (jokerCount >= 2) {
-            register(pair, 2, 'set');
-          }
+          if (jokerCount >= 2) register(pair, 2, 'set');
         }
-      }
     }
   }
 
-  // 2. Candidate Runs (by suit, contiguous windows)
+  // --- Suites (même couleur, fenêtres contiguës, As haut/bas)
   const bySuit = new Map<Suit, Card[]>();
-  for (const c of uniqueRealCards) {
-    const list = bySuit.get(c.suit!) ?? [];
-    list.push(c);
-    bySuit.set(c.suit!, list);
+  for (const c of uniqueReal) {
+    const l = bySuit.get(c.suit!) ?? [];
+    l.push(c);
+    bySuit.set(c.suit!, l);
   }
-
-  for (const [, suitCards] of bySuit.entries()) {
+  for (const suitCards of bySuit.values()) {
     for (const aceHigh of [true, false]) {
       const valToCard = new Map<number, Card>();
       for (const c of suitCards) {
         const v = c.rank === 'A' ? (aceHigh ? 14 : 1) : RANK_TO_LOW_VAL[c.rank!];
         valToCard.set(v, c);
       }
-
       const vals = Array.from(valToCard.keys()).sort((a, b) => a - b);
       if (vals.length < 2) continue;
 
@@ -509,7 +476,6 @@ function generateCanonicalCandidates(
           const subset = vals.slice(start, end + 1);
           const span = subset[subset.length - 1] - subset[0] + 1;
           if (span > 13) break;
-
           const missing = span - subset.length;
           if (missing > jokerCount) continue;
 
@@ -520,131 +486,273 @@ function generateCanonicalCandidates(
             13 - span
           );
           for (let extra = 0; extra <= maxExtra; extra++) {
-            if (span + extra >= 3) {
-              register(baseCards, missing + extra, 'run');
-            }
+            if (span + extra >= 3) register(baseCards, missing + extra, 'run');
           }
         }
       }
     }
   }
 
-  // Sort by points descending for rapid branch-and-bound pruning
-  baseCandidates.sort((a, b) => b.points - a.points);
-  const capped = baseCandidates.slice(0, 120);
-
-  // Duplicate candidates when hand actually holds 2 copies of every needed card & enough jokers
-  const expanded: CanonicalCandidate[] = [];
-  for (const cand of capped) {
-    expanded.push(cand);
-    const canRepeat =
-      cand.realKeys.every((k) => (cardsByKey.get(k)?.length ?? 0) >= 2) &&
-      jokerCount >= cand.jokerCount * 2;
-    if (canRepeat) {
-      expanded.push(cand);
-    }
-  }
-
-  return { candidates: expanded, cardsByKey };
+  out.sort((a, b) => b.value - a.value);
+  return { candidates: out.slice(0, 500), counts, jokers, pool };
 }
 
+export interface MeldSolution {
+  melds: TableMeld[];
+  totalPoints: number;
+  usedCardIds: Set<string>;
+}
+
+const SOLVER_NODE_LIMIT = 60000;
+const MELD_CACHE_MAX = 256;
+const meldCache = new Map<string, MeldSolution>();
+
+function cloneSolution(s: MeldSolution): MeldSolution {
+  return {
+    melds: [...s.melds],
+    totalPoints: s.totalPoints,
+    usedCardIds: new Set(s.usedCardIds),
+  };
+}
+
+/**
+ * Meilleur ensemble de combinaisons disjointes d'une main.
+ * Recherche exacte : on prend la plus petite carte restante ("pivot") et on
+ * décide soit de la laisser en main, soit de la placer dans l'une des
+ * combinaisons qui la contiennent. Mémoïsé sur l'état (cartes restantes), donc
+ * aucune limite arbitraire de candidats ni de branches comme avant.
+ */
 export function findBestDisjointMelds(
   hand: Card[],
   ownerIndex: number
-): { melds: TableMeld[]; totalPoints: number; usedCardIds: Set<string> } {
-  const { candidates, cardsByKey } = generateCanonicalCandidates(hand, ownerIndex);
-  if (candidates.length === 0) {
-    return { melds: [], totalPoints: 0, usedCardIds: new Set() };
-  }
+): MeldSolution {
+  const cacheKey = `${ownerIndex}:${hand.map((c) => c.id).sort().join(',')}`;
+  const cached = meldCache.get(cacheKey);
+  if (cached) return cloneSolution(cached);
 
-  const remCounts = new Map<string, number>();
-  for (const [k, list] of cardsByKey.entries()) {
-    remCounts.set(k, list.length);
-  }
+  const { candidates, counts, jokers, pool } = analyzeHand(hand, ownerIndex);
+  const empty: MeldSolution = { melds: [], totalPoints: 0, usedCardIds: new Set() };
+  if (candidates.length === 0) return empty;
 
-  let bestScore = 0;
-  let bestChoice: CanonicalCandidate[] = [];
-  const current: CanonicalCandidate[] = [];
-  let visitedNodes = 0;
-
-  // Precompute suffix upper bound
-  const suffixMax = new Array<number>(candidates.length + 1).fill(0);
-  for (let i = candidates.length - 1; i >= 0; i--) {
-    suffixMax[i] = suffixMax[i + 1] + candidates[i].points;
-  }
-
-  const dfs = (idx: number, currentScore: number) => {
-    visitedNodes += 1;
-    if (visitedNodes > 4000) return;
-
-    if (currentScore > bestScore) {
-      bestScore = currentScore;
-      bestChoice = [...current];
+  const byKey = new Map<number, Candidate[]>();
+  for (const cand of candidates) {
+    for (const k of cand.keys) {
+      const l = byKey.get(k) ?? [];
+      l.push(cand);
+      byKey.set(k, l);
     }
-    if (idx >= candidates.length) return;
-    if (currentScore + suffixMax[idx] <= bestScore) return;
+  }
 
-    const cand = candidates[idx];
-    const hasJokers = (remCounts.get('JOKER') ?? 0) >= cand.jokerCount;
-    const hasReal =
-      hasJokers && cand.realKeys.every((k) => (remCounts.get(k) ?? 0) >= 1);
+  const cnt = counts.slice();
+  let jk = jokers.length;
+  const memo = new Map<string, { v: number; c: Candidate | null }>();
+  let nodes = 0;
 
-    if (hasReal) {
-      if (cand.jokerCount > 0) {
-        remCounts.set('JOKER', remCounts.get('JOKER')! - cand.jokerCount);
-      }
-      for (const k of cand.realKeys) {
-        remCounts.set(k, remCounts.get(k)! - 1);
-      }
-      current.push(cand);
-      dfs(idx + 1, currentScore + cand.points);
-      current.pop();
-      for (const k of cand.realKeys) {
-        remCounts.set(k, remCounts.get(k)! + 1);
-      }
-      if (cand.jokerCount > 0) {
-        remCounts.set('JOKER', remCounts.get('JOKER')! + cand.jokerCount);
-      }
-    }
-
-    dfs(idx + 1, currentScore);
+  const stateKey = () => `${cnt.join('')}|${jk}`;
+  const firstPivot = () => {
+    for (let i = 0; i < 52; i++) if (cnt[i] > 0) return i;
+    return -1;
   };
 
-  dfs(0, 0);
+  const solve = (): number => {
+    const sk = stateKey();
+    const hit = memo.get(sk);
+    if (hit) return hit.v;
 
-  // Materialize canonical choices into concrete disjoint Card objects
-  const pool = new Map<string, Card[]>();
-  for (const [k, list] of cardsByKey.entries()) {
-    pool.set(k, [...list]);
+    const pivot = firstPivot();
+    if (pivot < 0) {
+      memo.set(sk, { v: 0, c: null });
+      return 0;
+    }
+    if (++nodes > SOLVER_NODE_LIMIT) return 0; // garde-fou
+
+    // Option 1 : le pivot reste en main
+    cnt[pivot] -= 1;
+    let best = solve();
+    let bestCand: Candidate | null = null;
+    cnt[pivot] += 1;
+
+    // Option 2 : le pivot rejoint une combinaison
+    for (const cand of byKey.get(pivot) ?? []) {
+      if (jk < cand.jokerCount) continue;
+      if (!cand.keys.every((k) => cnt[k] > 0)) continue;
+      for (const k of cand.keys) cnt[k] -= 1;
+      jk -= cand.jokerCount;
+      const v = cand.value + solve();
+      jk += cand.jokerCount;
+      for (const k of cand.keys) cnt[k] += 1;
+      if (v > best) {
+        best = v;
+        bestCand = cand;
+      }
+    }
+
+    memo.set(sk, { v: best, c: bestCand });
+    return best;
+  };
+
+  solve();
+
+  // Reconstruction du choix optimal
+  const chosen: Candidate[] = [];
+  for (;;) {
+    const entry = memo.get(stateKey());
+    const pivot = firstPivot();
+    if (!entry || pivot < 0) break;
+    if (!entry.c) {
+      cnt[pivot] -= 1;
+      continue;
+    }
+    for (const k of entry.c.keys) cnt[k] -= 1;
+    jk -= entry.c.jokerCount;
+    chosen.push(entry.c);
   }
+
+  // Matérialisation en vraies cartes (on dépile par la fin : l'ordre de la
+  // main décide quelle copie est utilisée)
+  const poolCopy = new Map<number, Card[]>();
+  for (const [k, l] of pool.entries()) poolCopy.set(k, [...l]);
+  const jokerPool = [...jokers];
 
   const melds: TableMeld[] = [];
   const usedCardIds = new Set<string>();
+  let totalPoints = 0;
 
-  for (const cand of bestChoice) {
-    const chosenCards: Card[] = [];
-    for (const k of cand.realKeys) {
-      const card = pool.get(k)!.pop()!;
-      chosenCards.push(card);
+  for (const cand of chosen) {
+    const cards: Card[] = [];
+    for (const k of cand.keys) {
+      const card = poolCopy.get(k)!.pop()!;
+      cards.push(card);
       usedCardIds.add(card.id);
     }
     for (let j = 0; j < cand.jokerCount; j++) {
-      const joker = pool.get('JOKER')!.pop()!;
-      chosenCards.push(joker);
+      const joker = jokerPool.pop()!;
+      cards.push(joker);
       usedCardIds.add(joker.id);
     }
-    const built = validateMeld(chosenCards, ownerIndex, cand.type);
+    const built = validateMeld(cards, ownerIndex, cand.type);
     if (built) {
       melds.push(built);
+      totalPoints += built.points;
     }
   }
 
-  return {
-    melds,
-    totalPoints: bestScore,
-    usedCardIds,
-  };
+  const result: MeldSolution = { melds, totalPoints, usedCardIds };
+  if (meldCache.size >= MELD_CACHE_MAX) {
+    const oldest = meldCache.keys().next().value;
+    if (oldest !== undefined) meldCache.delete(oldest);
+  }
+  meldCache.set(cacheKey, result);
+  return cloneSolution(result);
 }
+
+/** Peut-on ouvrir avec cette main (seuil de points atteint) ? */
+export function canOpen(
+  hand: Card[],
+  ownerIndex: number,
+  requiredThreshold: number
+): boolean {
+  return findBestDisjointMelds(hand, ownerIndex).totalPoints >= requiredThreshold;
+}
+
+/** Peut-on "fermer" : tout est posable, hormis la carte à défausser ? */
+export function canGoOut(hand: Card[], ownerIndex: number): boolean {
+  const best = findBestDisjointMelds(hand, ownerIndex);
+  return hand.length - best.usedCardIds.size <= 1;
+}
+
+// ============================================================================
+// POSE SUR LA TABLE (extensions + échanges de jokers)
+// ============================================================================
+
+export interface LayoffAction {
+  kind: 'extend' | 'swap';
+  meldId: string;
+  card: Card;
+  retrievedJoker?: Card;
+}
+
+export interface LayoffPlan {
+  actions: LayoffAction[];
+  melds: TableMeld[];
+  hand: Card[];
+}
+
+/**
+ * Enchaîne les poses possibles sur les combinaisons de la table :
+ * échange de jokers d'abord (récupère un joker), puis extensions les plus
+ * rentables. `keepAtLeast` garde des cartes en main (ex. 1 pour pouvoir défausser).
+ * Les jokers de la main ne sont jamais posés en extension.
+ */
+export function planLayoffs(
+  hand: Card[],
+  tableMelds: TableMeld[],
+  keepAtLeast = 0
+): LayoffPlan {
+  let h = [...hand];
+  const melds = [...tableMelds];
+  const actions: LayoffAction[] = [];
+
+  for (let guard = 0; guard < 80; guard++) {
+    let progressed = false;
+
+    // 1) Échanges de jokers (ne consomme pas de carte nette : +1 joker -1 carte)
+    swapSearch: for (const card of h) {
+      if (card.isJoker) continue;
+      for (let mi = 0; mi < melds.length; mi++) {
+        const r = trySwapJokerInMeld(melds[mi], card);
+        if (!r) continue;
+        melds[mi] = r.updatedMeld;
+        h = h.filter((c) => c.id !== card.id);
+        h.push(r.retrievedJoker);
+        actions.push({
+          kind: 'swap',
+          meldId: r.updatedMeld.id,
+          card,
+          retrievedJoker: r.retrievedJoker,
+        });
+        progressed = true;
+        break swapSearch;
+      }
+    }
+    if (progressed) continue;
+
+    // 2) Meilleure extension
+    if (h.length <= keepAtLeast) break;
+    let bestGain = -1;
+    let bestCard: Card | null = null;
+    let bestIdx = -1;
+    let bestMeld: TableMeld | null = null;
+
+    for (const card of h) {
+      if (card.isJoker) continue;
+      for (let mi = 0; mi < melds.length; mi++) {
+        const ext = tryExtendTableMeld(melds[mi], [card]);
+        if (!ext) continue;
+        const gain = ext.points - melds[mi].points;
+        if (gain > bestGain) {
+          bestGain = gain;
+          bestCard = card;
+          bestIdx = mi;
+          bestMeld = ext;
+        }
+      }
+    }
+    if (bestCard && bestMeld) {
+      melds[bestIdx] = bestMeld;
+      h = h.filter((c) => c.id !== bestCard!.id);
+      actions.push({ kind: 'extend', meldId: bestMeld.id, card: bestCard });
+      progressed = true;
+    }
+    if (!progressed) break;
+  }
+
+  return { actions, melds, hand: h };
+}
+
+// ============================================================================
+// IA : PIOCHE
+// ============================================================================
 
 export function decideAIDrawSource(params: {
   hand: Card[];
@@ -668,33 +776,107 @@ export function decideAIDrawSource(params: {
   if (!topDiscard) return 'stock';
   if (topDiscard.isJoker) return 'discard';
 
-  // If already opened and topDiscard immediately extends a table meld -> great pickup!
-  if (hasOpened) {
-    const canAttachDirectly = tableMelds.some(
+  if (hasOpened && difficulty !== 'detente') {
+    const canAttach = tableMelds.some(
       (m) =>
         tryExtendTableMeld(m, [topDiscard]) !== null ||
         trySwapJokerInMeld(m, topDiscard) !== null
     );
-    if (canAttachDirectly && difficulty !== 'detente') {
-      return 'discard';
-    }
+    if (canAttach) return 'discard';
   }
 
   const before = findBestDisjointMelds(hand, playerIndex);
+  // La carte ramassée est placée en dernier : elle est utilisée en priorité
   const after = findBestDisjointMelds([...hand, topDiscard], playerIndex);
 
-  // If taking discard enables opening right now -> always take!
-  if (!hasOpened && before.totalPoints < requiredThreshold && after.totalPoints >= requiredThreshold) {
+  if (
+    !hasOpened &&
+    before.totalPoints < requiredThreshold &&
+    after.totalPoints >= requiredThreshold
+  ) {
     return 'discard';
   }
 
-  // If discard meaningfully boosts meld points
+  // Un gain strictement positif implique que la carte ramassée est utilisée
   const minGain = difficulty === 'maitre' ? 10 : difficulty === 'salon' ? 14 : 20;
-  if (after.totalPoints - before.totalPoints >= minGain && after.usedCardIds.has(topDiscard.id)) {
-    return 'discard';
-  }
+  if (after.totalPoints - before.totalPoints >= minGain) return 'discard';
 
   return 'stock';
+}
+
+// ============================================================================
+// IA : DÉFAUSSE (avec comptage des cartes déjà vues)
+// ============================================================================
+
+function buildSeenCounts(
+  hand: Card[],
+  tableMelds: TableMeld[],
+  discardPile: Card[]
+): number[] {
+  const seen = new Array<number>(52).fill(0);
+  const add = (c: Card) => {
+    if (!c.isJoker && c.rank && c.suit) seen[cardKeyIndex(c)] += 1;
+  };
+  hand.forEach(add);
+  discardPile.forEach(add);
+  for (const m of tableMelds) for (const s of m.slots) add(s.card);
+  return seen;
+}
+
+function runLink(
+  card: Card,
+  other: Card,
+  unseen: (rank: Rank, suit: Suit) => number
+): { d: number; outs: number } {
+  let va = RANK_TO_LOW_VAL[card.rank!];
+  let vb = RANK_TO_LOW_VAL[other.rank!];
+  if (card.rank === 'A' && vb >= 12) va = 14;
+  else if (other.rank === 'A' && va >= 12) vb = 14;
+
+  const lo = Math.min(va, vb);
+  const hi = Math.max(va, vb);
+  const d = hi - lo;
+  const suit = card.suit!;
+  const out = (v: number) => (v >= 1 && v <= 14 ? unseen(VAL_TO_RANK[v], suit) : 0);
+
+  if (d === 1) return { d, outs: out(lo - 1) + out(hi + 1) };
+  if (d === 2) return { d, outs: out(lo + 1) };
+  return { d, outs: 0 };
+}
+
+/** Valeur de "garder" une carte : potentiel de set/suite pondéré par les cartes restantes. */
+function keepValue(
+  card: Card,
+  hand: Card[],
+  unseen: (rank: Rank, suit: Suit) => number
+): number {
+  let value = 0;
+  const partnerSuits = new Set<Suit>();
+
+  for (const o of hand) {
+    if (o.id === card.id || o.isJoker) continue;
+
+    if (o.rank === card.rank) {
+      if (o.suit !== card.suit) partnerSuits.add(o.suit!);
+      else value -= 4; // doublon exact : inutile pour former une combinaison
+      continue;
+    }
+    if (o.suit === card.suit) {
+      const { d, outs } = runLink(card, o, unseen);
+      if (d === 1) value += (outs > 0 ? 16 : 5) + 4 * Math.min(3, outs);
+      else if (d === 2) value += (outs > 0 ? 7 : 2) + 3 * Math.min(3, outs);
+    }
+  }
+
+  if (partnerSuits.size > 0) {
+    const held = new Set<Suit>([card.suit!, ...partnerSuits]);
+    let setOuts = 0;
+    for (const s of ALL_SUITS) {
+      if (!held.has(s)) setOuts += unseen(card.rank!, s);
+    }
+    value += (setOuts > 0 ? 18 : 5) * partnerSuits.size + 4 * Math.min(3, setOuts);
+  }
+  return value;
 }
 
 export function chooseAIDiscard(params: {
@@ -703,73 +885,67 @@ export function chooseAIDiscard(params: {
   tableMelds: TableMeld[];
   difficulty: Difficulty;
   playerIndex: number;
+  /** Défausse visible (améliore l'estimation des cartes restantes). */
+  discardPile?: Card[];
+  /** Plus petite main parmi les adversaires : si faible, on se débarrasse des grosses cartes. */
+  opponentMinHandSize?: number;
 }): Card {
-  const { hand, forbiddenDiscardId, tableMelds, difficulty, playerIndex } = params;
+  const {
+    hand,
+    forbiddenDiscardId,
+    tableMelds,
+    difficulty,
+    playerIndex,
+    discardPile = [],
+    opponentMinHandSize,
+  } = params;
 
   if (hand.length === 1) return hand[0];
 
   const candidates = hand.filter((c) => c.id !== forbiddenDiscardId);
   const pool = candidates.length > 0 ? candidates : hand;
 
-  // Never discard a Joker unless it's the only card
+  // Ne jamais défausser un joker sauf s'il ne reste que ça
   const nonJokers = pool.filter((c) => !c.isJoker);
   const validPool = nonJokers.length > 0 ? nonJokers : pool;
 
   const currentBest = findBestDisjointMelds(hand, playerIndex);
 
+  // En mode détente l'IA ne suit pas les cartes vues
+  const seen =
+    difficulty === 'detente'
+      ? buildSeenCounts(hand, [], [])
+      : buildSeenCounts(hand, tableMelds, discardPile);
+  const unseen = (rank: Rank, suit: Suit) =>
+    Math.max(0, 2 - seen[SUIT_INDEX[suit] * 13 + RANK_TO_LOW_VAL[rank] - 1]);
+
+  const penaltyWeight =
+    opponentMinHandSize !== undefined && opponentMinHandSize <= 3 ? 2.2 : 1.4;
+
   let worstCard = validPool[0];
-  let bestDiscardUtility = -Infinity;
+  let bestUtility = -Infinity;
 
   for (const card of validPool) {
     let utility = 0;
 
-    // Strongly avoid breaking an already-formed meld
-    if (currentBest.usedCardIds.has(card.id)) {
-      utility -= 120;
-    }
+    if (currentBest.usedCardIds.has(card.id)) utility -= 120;
 
-    // Check synergy with remaining hand (same rank or adjacent same suit)
-    let synergy = 0;
-    for (const other of hand) {
-      if (other.id === card.id || other.isJoker) continue;
-      if (other.rank === card.rank && other.suit !== card.suit) {
-        synergy += 18;
-      }
-      if (other.suit === card.suit) {
-        const diff = Math.abs(
-          RANK_TO_LOW_VAL[other.rank!] - RANK_TO_LOW_VAL[card.rank!]
-        );
-        if (diff === 1) synergy += 16;
-        else if (diff === 2) synergy += 6;
-        // High Ace adjacency with R / D
-        if (
-          (card.rank === 'A' && (other.rank === 'R' || other.rank === 'D')) ||
-          (other.rank === 'A' && (card.rank === 'R' || card.rank === 'D'))
-        ) {
-          synergy += 14;
-        }
-      }
-    }
-    utility -= synergy;
+    utility -= keepValue(card, hand, unseen);
+    utility += getHandCardPenalty(card) * penaltyWeight;
 
-    // Prefer shedding high deadwood points when card has low synergy
-    utility += getHandCardPenalty(card) * 1.4;
-
-    // On Maître difficulty, avoid discarding a card that can be immediately played onto table melds
-    if (difficulty === 'maitre') {
+    if (difficulty === 'maitre' || difficulty === 'salon') {
       const helpsTable = tableMelds.some(
         (m) => tryExtendTableMeld(m, [card]) !== null
       );
-      if (helpsTable) utility -= 24;
+      if (helpsTable) utility -= difficulty === 'maitre' ? 24 : 10;
     }
 
-    // Slight randomness on Détente
     if (difficulty === 'detente') {
       utility += (Math.random() - 0.5) * 14;
     }
 
-    if (utility > bestDiscardUtility) {
-      bestDiscardUtility = utility;
+    if (utility > bestUtility) {
+      bestUtility = utility;
       worstCard = card;
     }
   }

@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canGoOut,
+  canOpen,
   chooseAIDiscard,
   computeHandPenalty,
   createDoubleDeck,
   decideAIDrawSource,
   findBestDisjointMelds,
+  mulberry32,
+  planLayoffs,
   sortHand,
   tryExtendTableMeld,
   trySwapJokerInMeld,
@@ -321,6 +325,82 @@ describe('rami72Engine', () => {
         playerIndex: 1,
       });
       expect(discardChoice.id).toBe('d0-2-diamonds');
+    });
+
+    it('produces deterministic decks with mulberry32', () => {
+      const a = createDoubleDeck(mulberry32(42));
+      const b = createDoubleDeck(mulberry32(42));
+      const c = createDoubleDeck(mulberry32(43));
+      expect(a.map((x) => x.id)).toEqual(b.map((x) => x.id));
+      expect(a.map((x) => x.id)).not.toEqual(c.map((x) => x.id));
+    });
+
+    it('conserves Jokers on equal meld points and supports canOpen/canGoOut', () => {
+      const hand = [
+        card('A', 'hearts'),
+        card('A', 'diamonds'),
+        card('A', 'clubs'),
+        card('A', 'spades'), // 44 pts
+        card('7', 'hearts'),
+        card('7', 'diamonds'),
+        card('7', 'clubs'),
+        card('7', 'spades'), // 28 pts -> 72 total, no run possible with 1 joker
+        joker(1), // 1 card left to discard -> canGoOut = true
+      ];
+      const best = findBestDisjointMelds(hand, 0);
+      expect(best.totalPoints).toBe(72);
+      expect(best.usedCardIds.has(joker(1).id)).toBe(false);
+      expect(canOpen(hand, 0, 72)).toBe(true);
+      expect(canOpen(hand, 0, 73)).toBe(false);
+      expect(canGoOut(hand, 0)).toBe(true);
+    });
+
+    it('executes Joker swaps before extensions in planLayoffs and respects keepAtLeast', () => {
+      const j = joker(1);
+      const runWithJoker = validateMeld(
+        [card('6', 'hearts'), j, card('8', 'hearts')],
+        0
+      )!;
+      const plan = planLayoffs(
+        [card('7', 'hearts'), card('9', 'hearts'), card('2', 'clubs')],
+        [runWithJoker],
+        1
+      );
+      expect(plan.actions.some((a) => a.kind === 'swap')).toBe(true);
+      expect(plan.actions.some((a) => a.kind === 'extend')).toBe(true);
+      // Kept Joker + 2♣ in hand (2 cards >= keepAtLeast 1, Joker never laid off)
+      expect(plan.hand.some((c) => c.id === j.id)).toBe(true);
+      expect(plan.melds[0].slots).toHaveLength(4);
+    });
+
+    it('uses seen card counting and opponent hand size in chooseAIDiscard', () => {
+      // 4♣+6♣ needs 5♣; if both 5♣ are already in discardPile, 4♣/6♣ is dead vs live 8♥+9♥
+      const discardPile = [card('5', 'clubs', 0), card('5', 'clubs', 1)];
+      const chosen = chooseAIDiscard({
+        hand: [
+          card('6', 'clubs'),
+          card('4', 'clubs'),
+          card('6', 'hearts'),
+          card('7', 'hearts'),
+        ],
+        forbiddenDiscardId: null,
+        tableMelds: [],
+        difficulty: 'maitre',
+        playerIndex: 1,
+        discardPile,
+      });
+      expect(chosen.suit).toBe('clubs');
+
+      // When an opponent is down to <= 3 cards, AI sheds high-penalty deadwood
+      const shed = chooseAIDiscard({
+        hand: [card('R', 'spades'), card('3', 'hearts')],
+        forbiddenDiscardId: null,
+        tableMelds: [],
+        difficulty: 'maitre',
+        playerIndex: 1,
+        opponentMinHandSize: 2,
+      });
+      expect(shed.rank).toBe('R');
     });
   });
 });
