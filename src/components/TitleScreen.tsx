@@ -312,11 +312,13 @@ export function TitleScreen({
 
               <div className="space-y-1.5 border-t border-white/10 pt-4">
                 <h3 className="font-display text-base font-semibold text-[#E5C158]">
-                  03. Ouverture à 72 puis surenchère
+                  03. Ouverture à 72 sans Joker puis surenchère
                 </h3>
                 <p className="text-sm leading-relaxed text-[#BAC8C2]">
-                  Le premier joueur à étaler doit atteindre au moins 72 points. S’il pose
-                  78 points, le joueur suivant devra réunir au moins 79 points pour ouvrir.
+                  L&rsquo;ouverture exige au moins 1 trio/carré sans Joker, 1 suite sans
+                  Joker et 72 points sans Joker (les Jokers restent permis au-delà de 72
+                  points). S&rsquo;il pose 78 points, le suivant doit atteindre au moins 79
+                  points.
                 </p>
               </div>
 

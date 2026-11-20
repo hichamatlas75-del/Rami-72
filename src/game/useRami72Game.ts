@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  OpeningValidationResult,
   chooseAIDiscard,
   computeHandPenalty,
   createDoubleDeck,
   decideAIDrawSource,
   findBestDisjointMelds,
+  findBestOpeningMelds,
   planLayoffs,
   sortHand,
   tryExtendTableMeld,
   trySwapJokerInMeld,
   validateMeld,
+  validateOpeningMelds,
 } from './rami72Engine';
 import { ramiAudio } from './sound';
 import {
@@ -62,6 +65,8 @@ export interface TableState {
   isInitialTapisCard: boolean;
   /** Prevents immediately discarding the exact card just picked from the discard pile */
   drawnFromDiscardId: string | null;
+  /** Tracks the exact card drawn by the human on their current turn */
+  lastDrawnCardId: string | null;
   speech: Record<number, string>;
   cumulativePenalty: number[];
   roundsWon: number[];
@@ -139,6 +144,7 @@ function dealNewRound(params: {
     turnStep: 'DRAW',
     isInitialTapisCard: true,
     drawnFromDiscardId: null,
+    lastDrawnCardId: null,
     speech: {},
     cumulativePenalty,
     roundsWon,
@@ -162,6 +168,7 @@ function enterRevealState(
     phase: 'ROUND_REVEAL',
     isInitialTapisCard: false,
     drawnFromDiscardId: null,
+    lastDrawnCardId: null,
     revealWinnerIndex: winnerIndex,
     revealMeldIds: Array.from(new Set(highlightMeldIds)),
     speech: {
@@ -213,6 +220,7 @@ function finishRoundState(
     ...prev,
     hands: finalHands,
     phase: prev.roundNumber >= totalRounds ? 'GAME_OVER' : 'ROUND_SUMMARY',
+    lastDrawnCardId: null,
     revealWinnerIndex: null,
     cumulativePenalty: nextCumulative,
     roundsWon: nextRoundsWon,
@@ -358,11 +366,12 @@ export function useRami72Game(params: {
     if (!isHumanPlay || stagedMelds.length > 0 || visibleHumanHand.length < 3) {
       return null;
     }
-    const best = findBestDisjointMelds(visibleHumanHand, 0);
+    const best = humanOpened
+      ? findBestDisjointMelds(visibleHumanHand, 0)
+      : findBestOpeningMelds(visibleHumanHand, 0, requiredThreshold);
     if (best.melds.length === 0) return null;
     const remainingCount = visibleHumanHand.length - best.usedCardIds.size;
     if (remainingCount > 1) return null;
-    if (!humanOpened && best.totalPoints < requiredThreshold) return null;
     return {
       melds: best.melds,
       totalPoints: best.totalPoints,
@@ -488,6 +497,7 @@ export function useRami72Game(params: {
             turnStep: 'PLAY_OR_DISCARD',
             isInitialTapisCard: false,
             drawnFromDiscardId: drawn.id,
+            lastDrawnCardId: drawn.id,
             speech: { ...prev.speech, 0: `Prend ${formatCardShort(drawn)}` },
             soundCue: nextSoundCue(prev, 'snap'),
           };
@@ -521,6 +531,7 @@ export function useRami72Game(params: {
           discard: nextDiscard,
           turnStep: 'PLAY_OR_DISCARD',
           drawnFromDiscardId: null,
+          lastDrawnCardId: drawn.id,
           speech: { ...prev.speech, 0: 'Pioche' },
           soundCue: nextSoundCue(prev, 'snap'),
         };
@@ -551,11 +562,15 @@ export function useRami72Game(params: {
   const handleCommitMelds = useCallback(
     (meldsToCommit: TableMeld[], isOpening: boolean) => {
       const totalPts = meldsToCommit.reduce((sum, m) => sum + m.points, 0);
-      if (isOpening && totalPts < requiredThreshold) {
-        setFeedbackMessage(
-          `Il vous faut au moins ${requiredThreshold} points pour étaler (${totalPts} pts préparés).`
-        );
-        return;
+      if (isOpening) {
+        const openingCheck = validateOpeningMelds(meldsToCommit, requiredThreshold);
+        if (!openingCheck.valid) {
+          setFeedbackMessage(
+            openingCheck.reason ??
+              `Conditions d'ouverture non remplies (${totalPts}/${requiredThreshold} pts).`
+          );
+          return;
+        }
       }
 
       const usedIds = new Set<string>();
@@ -592,6 +607,10 @@ export function useRami72Game(params: {
           openedWith: nextOpenedWith,
           highestOpeningScore: nextHighest,
           lastOpenerIndex: nextLastOpener,
+          lastDrawnCardId:
+            prev.lastDrawnCardId && usedIds.has(prev.lastDrawnCardId)
+              ? null
+              : prev.lastDrawnCardId,
           speech: {
             ...prev.speech,
             0: isOpening ? `Étale ${totalPts} pts !` : `Pose +${totalPts} pts`,
@@ -643,6 +662,8 @@ export function useRami72Game(params: {
               ...prev,
               hands: nextHands,
               tableMelds: nextTableMelds,
+              lastDrawnCardId:
+                prev.lastDrawnCardId === card.id ? null : prev.lastDrawnCardId,
               speech: { ...prev.speech, 0: 'Récupère un Joker' },
               soundCue: nextSoundCue(prev, 'open72'),
             };
@@ -668,6 +689,10 @@ export function useRami72Game(params: {
               ...prev,
               hands: nextHands,
               tableMelds: nextTableMelds,
+              lastDrawnCardId:
+                prev.lastDrawnCardId && usedIds.has(prev.lastDrawnCardId)
+                  ? null
+                  : prev.lastDrawnCardId,
               speech: { ...prev.speech, 0: 'Complète le tapis' },
               soundCue: nextSoundCue(prev, 'meld'),
             };
@@ -739,6 +764,7 @@ export function useRami72Game(params: {
         turnStep: 'DRAW',
         isInitialTapisCard: false,
         drawnFromDiscardId: null,
+        lastDrawnCardId: null,
         speech: { ...prev.speech, 0: `Défausse ${formatCardShort(card)}` },
         soundCue: nextSoundCue(prev, 'snap'),
       };
@@ -873,10 +899,10 @@ export function useRami72Game(params: {
         let cueKind: SoundCueKind = 'snap';
         const changedMeldIds: string[] = [];
 
-        // 1. If not opened yet -> check if AI can beat the current threshold
+        // 1. If not opened yet -> check if AI can open legally & beat the current threshold
         if (!nextHasOpened[aiIdx]) {
           const req = getRequiredThreshold(nextHighest);
-          const best = findBestDisjointMelds(hand, aiIdx);
+          const best = findBestOpeningMelds(hand, aiIdx, req);
           if (best.totalPoints >= req && best.melds.length > 0) {
             hand = hand.filter((c) => !best.usedCardIds.has(c.id));
             tableMelds = [...tableMelds, ...best.melds];
@@ -1141,17 +1167,33 @@ export function useRami72Game(params: {
   const topDiscard =
     state.discard.length > 0 ? state.discard[state.discard.length - 1] : null;
 
+  const stagedOpeningCheck = useMemo<OpeningValidationResult>(
+    () => validateOpeningMelds(stagedMelds, requiredThreshold),
+    [stagedMelds, requiredThreshold]
+  );
+
+  const directOpeningCheck = useMemo<OpeningValidationResult>(
+    () =>
+      validateOpeningMelds(
+        selectedMeldBundle
+          ? [...stagedMelds, ...selectedMeldBundle.melds]
+          : stagedMelds,
+        requiredThreshold
+      ),
+    [stagedMelds, selectedMeldBundle, requiredThreshold]
+  );
+
   const canDirectOpenWithSelection =
     isHumanPlay &&
     !humanOpened &&
     selectedMeldBundle !== null &&
-    stagedTotalPoints + selectedMeldBundle.totalPoints >= requiredThreshold;
+    directOpeningCheck.valid;
 
   const canCommitStagedOpening =
     isHumanPlay &&
     !humanOpened &&
     stagedMelds.length > 0 &&
-    stagedTotalPoints >= requiredThreshold;
+    stagedOpeningCheck.valid;
 
   const canDiscardSelected =
     isHumanPlay &&
@@ -1164,6 +1206,14 @@ export function useRami72Game(params: {
 
   const canDrawDiscard =
     isHumanDraw && state.isInitialTapisCard && topDiscard !== null;
+
+  const lastDrawnCard = useMemo(
+    () =>
+      isHumanPlay && state.lastDrawnCardId
+        ? visibleHumanHand.find((c) => c.id === state.lastDrawnCardId) ?? null
+        : null,
+    [isHumanPlay, state.lastDrawnCardId, visibleHumanHand]
+  );
 
   return {
     state,
@@ -1183,7 +1233,11 @@ export function useRami72Game(params: {
     selectedCards,
     selectedMeldBundle,
     autoCompleteBundle,
+    lastDrawnCardId: lastDrawnCard?.id ?? null,
+    lastDrawnCard,
     stagedTotalPoints,
+    stagedOpeningCheck,
+    directOpeningCheck,
     extendableMeldIds,
     swappableMeldIds,
     topDiscard,

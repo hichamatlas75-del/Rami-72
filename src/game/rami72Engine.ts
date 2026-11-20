@@ -495,8 +495,21 @@ function analyzeHand(hand: Card[], ownerIndex: number): HandAnalysis {
   }
 
   out.sort((a, b) => b.value - a.value);
-  return { candidates: out.slice(0, 500), counts, jokers, pool };
+  const candidates =
+    out.length <= 500
+      ? out
+      : (() => {
+          const pure = out.filter((c) => c.jokerCount === 0);
+          const mixed = out.filter((c) => c.jokerCount > 0);
+          return [
+            ...pure,
+            ...mixed.slice(0, Math.max(0, 500 - pure.length)),
+          ].sort((a, b) => b.value - a.value);
+        })();
+  return { candidates, counts, jokers, pool };
 }
+
+export const INITIAL_OPENING_PURE_MIN = 72;
 
 export interface MeldSolution {
   melds: TableMeld[];
@@ -647,18 +660,259 @@ export function findBestDisjointMelds(
   return cloneSolution(result);
 }
 
-/** Peut-on ouvrir avec cette main (seuil de points atteint) ? */
+export function isPureMeld(meld: TableMeld): boolean {
+  return meld.slots.every((slot) => !slot.card.isJoker);
+}
+
+export interface OpeningValidationResult {
+  valid: boolean;
+  totalPoints: number;
+  purePoints: number;
+  hasPureSet: boolean;
+  hasPureRun: boolean;
+  meetsPureMin: boolean;
+  meetsThreshold: boolean;
+  requiredThreshold: number;
+  reason?: string;
+}
+
+export function validateOpeningMelds(
+  melds: TableMeld[],
+  requiredThreshold: number = INITIAL_OPENING_PURE_MIN
+): OpeningValidationResult {
+  const effectiveThreshold = Math.max(INITIAL_OPENING_PURE_MIN, requiredThreshold);
+  const pureMelds = melds.filter(isPureMeld);
+  const hasPureSet = pureMelds.some((m) => m.type === 'set');
+  const hasPureRun = pureMelds.some((m) => m.type === 'run');
+  const purePoints = pureMelds.reduce((sum, m) => sum + m.points, 0);
+  const totalPoints = melds.reduce((sum, m) => sum + m.points, 0);
+  const meetsPureMin = purePoints >= INITIAL_OPENING_PURE_MIN;
+  const meetsThreshold = totalPoints >= effectiveThreshold;
+  const valid =
+    melds.length > 0 &&
+    hasPureSet &&
+    hasPureRun &&
+    meetsPureMin &&
+    meetsThreshold;
+
+  let reason: string | undefined;
+  if (!valid) {
+    if (!hasPureSet && !hasPureRun) {
+      reason =
+        "L'ouverture exige au moins 1 trio/carré sans joker et 1 suite sans joker.";
+    } else if (!hasPureSet) {
+      reason = "L'ouverture exige au moins 1 trio/carré sans joker.";
+    } else if (!hasPureRun) {
+      reason = "L'ouverture exige au moins 1 suite sans joker.";
+    } else if (!meetsPureMin) {
+      reason = `Il faut au moins ${INITIAL_OPENING_PURE_MIN} pts sans joker (${purePoints}/${INITIAL_OPENING_PURE_MIN} pts).`;
+    } else if (!meetsThreshold) {
+      reason = `Score d'ouverture insuffisant : ${totalPoints}/${effectiveThreshold} pts requis.`;
+    }
+  }
+
+  return {
+    valid,
+    totalPoints,
+    purePoints,
+    hasPureSet,
+    hasPureRun,
+    meetsPureMin,
+    meetsThreshold,
+    requiredThreshold: effectiveThreshold,
+    reason,
+  };
+}
+
+function keyMaxRealPoints(key: number): number {
+  const lowVal = (key % 13) + 1;
+  if (lowVal === 1) return 11;
+  if (lowVal >= 10) return 10;
+  return lowVal;
+}
+
+const OPENING_BASE_NODE_LIMIT = 15000;
+
+/**
+ * Meilleure combinaison d'ouverture légale selon les règles du Rami 72 :
+ * - au moins 1 trio/carré sans joker ;
+ * - au moins 1 suite sans joker ;
+ * - au moins 72 pts de combinaisons sans joker ;
+ * - total (y compris combinaisons avec joker ajoutées au-delà des 72 pts) >= requiredThreshold.
+ */
+export function findBestOpeningMelds(
+  hand: Card[],
+  ownerIndex: number,
+  requiredThreshold: number = INITIAL_OPENING_PURE_MIN
+): MeldSolution {
+  const effectiveThreshold = Math.max(INITIAL_OPENING_PURE_MIN, requiredThreshold);
+  const empty: MeldSolution = { melds: [], totalPoints: 0, usedCardIds: new Set() };
+
+  let totalMaxReal = 0;
+  for (const c of hand) {
+    if (!c.isJoker && c.suit && c.rank) {
+      totalMaxReal += keyMaxRealPoints(cardKeyIndex(c));
+    }
+  }
+  if (totalMaxReal < INITIAL_OPENING_PURE_MIN) return empty;
+
+  const { candidates, counts, jokers, pool } = analyzeHand(hand, ownerIndex);
+  const pureCandidates = candidates.filter((c) => c.jokerCount === 0);
+  if (pureCandidates.length < 2) return empty;
+
+  const n = pureCandidates.length;
+  const suffixHasSet = new Array<boolean>(n + 1).fill(false);
+  const suffixHasRun = new Array<boolean>(n + 1).fill(false);
+  for (let i = n - 1; i >= 0; i--) {
+    suffixHasSet[i] = suffixHasSet[i + 1] || pureCandidates[i].type === 'set';
+    suffixHasRun[i] = suffixHasRun[i + 1] || pureCandidates[i].type === 'run';
+  }
+  if (!suffixHasSet[0] || !suffixHasRun[0]) return empty;
+
+  const remCounts = [...counts];
+  const chosen: Candidate[] = [];
+  const bestPureForRem = new Map<string, number>();
+
+  let bestSolution: MeldSolution | null = null;
+  let bestScoreValue = -1;
+  let nodes = 0;
+
+  const evaluatePureBase = (purePts: number) => {
+    const remKey = remCounts.join(',');
+    const prevPure = bestPureForRem.get(remKey) ?? -1;
+    if (prevPure >= purePts) return;
+    bestPureForRem.set(remKey, purePts);
+
+    const cursors = new Array<number>(52).fill(0);
+    const pureMelds: TableMeld[] = [];
+    const pureUsedIds = new Set<string>();
+
+    for (const cand of chosen) {
+      const cards = cand.keys.map((k) => {
+        const list = pool.get(k)!;
+        const card = list[cursors[k]];
+        cursors[k] += 1;
+        return card;
+      });
+      const meld = validateMeld(cards, ownerIndex, cand.type);
+      if (!meld) return;
+      pureMelds.push(meld);
+      for (const c of cards) pureUsedIds.add(c.id);
+    }
+
+    const remHand: Card[] = [...jokers];
+    for (const [k, list] of pool.entries()) {
+      for (let idx = cursors[k]; idx < list.length; idx++) {
+        remHand.push(list[idx]);
+      }
+    }
+
+    const ext =
+      remHand.length >= 3
+        ? findBestDisjointMelds(remHand, ownerIndex)
+        : { melds: [], totalPoints: 0, usedCardIds: new Set<string>() };
+
+    const totalPoints = purePts + ext.totalPoints;
+    if (totalPoints < effectiveThreshold) return;
+
+    let jokersUsed = 0;
+    for (const m of ext.melds) {
+      for (const s of m.slots) {
+        if (s.card.isJoker) jokersUsed += 1;
+      }
+    }
+    const scoreValue = totalPoints * 10 - jokersUsed;
+
+    if (scoreValue > bestScoreValue) {
+      bestScoreValue = scoreValue;
+      const usedCardIds = new Set<string>(pureUsedIds);
+      for (const id of ext.usedCardIds) usedCardIds.add(id);
+      bestSolution = {
+        melds: [...pureMelds, ...ext.melds],
+        totalPoints,
+        usedCardIds,
+      };
+    }
+  };
+
+  const dfs = (
+    idx: number,
+    purePts: number,
+    remMaxRealPts: number,
+    hasSet: boolean,
+    hasRun: boolean
+  ) => {
+    if (nodes >= OPENING_BASE_NODE_LIMIT) return;
+    nodes += 1;
+
+    if (hasSet && hasRun && purePts >= INITIAL_OPENING_PURE_MIN) {
+      evaluatePureBase(purePts);
+      return;
+    }
+
+    if (idx >= n) return;
+    if (purePts + remMaxRealPts < INITIAL_OPENING_PURE_MIN) return;
+    if (!hasSet && !suffixHasSet[idx]) return;
+    if (!hasRun && !suffixHasRun[idx]) return;
+
+    const cand = pureCandidates[idx];
+    let canTake = true;
+    for (const k of cand.keys) {
+      if (remCounts[k] <= 0) {
+        canTake = false;
+        break;
+      }
+    }
+
+    if (canTake) {
+      let candMaxLoss = 0;
+      for (const k of cand.keys) {
+        remCounts[k] -= 1;
+        candMaxLoss += keyMaxRealPoints(k);
+      }
+      chosen.push(cand);
+
+      dfs(
+        idx,
+        purePts + cand.points,
+        remMaxRealPts - candMaxLoss,
+        hasSet || cand.type === 'set',
+        hasRun || cand.type === 'run'
+      );
+
+      chosen.pop();
+      for (const k of cand.keys) {
+        remCounts[k] += 1;
+      }
+    }
+
+    dfs(idx + 1, purePts, remMaxRealPts, hasSet, hasRun);
+  };
+
+  dfs(0, 0, totalMaxReal, false, false);
+  return bestSolution ?? empty;
+}
+
+/** Peut-on ouvrir avec cette main (trio + suite + 72 pts sans joker et seuil atteint) ? */
 export function canOpen(
   hand: Card[],
   ownerIndex: number,
   requiredThreshold: number
 ): boolean {
-  return findBestDisjointMelds(hand, ownerIndex).totalPoints >= requiredThreshold;
+  return findBestOpeningMelds(hand, ownerIndex, requiredThreshold).melds.length > 0;
 }
 
 /** Peut-on "fermer" : tout est posable, hormis la carte à défausser ? */
-export function canGoOut(hand: Card[], ownerIndex: number): boolean {
-  const best = findBestDisjointMelds(hand, ownerIndex);
+export function canGoOut(
+  hand: Card[],
+  ownerIndex: number,
+  hasOpened = true,
+  requiredThreshold = INITIAL_OPENING_PURE_MIN
+): boolean {
+  const best = hasOpened
+    ? findBestDisjointMelds(hand, ownerIndex)
+    : findBestOpeningMelds(hand, ownerIndex, requiredThreshold);
+  if (!hasOpened && best.melds.length === 0) return false;
   return hand.length - best.usedCardIds.size <= 1;
 }
 
@@ -788,17 +1042,21 @@ export function decideAIDrawSource(params: {
     if (canAttach) return 'discard';
   }
 
+  if (!hasOpened) {
+    const openBefore = findBestOpeningMelds(hand, playerIndex, requiredThreshold);
+    const openAfter = findBestOpeningMelds(
+      [...hand, topDiscard],
+      playerIndex,
+      requiredThreshold
+    );
+    if (openBefore.melds.length === 0 && openAfter.melds.length > 0) {
+      return 'discard';
+    }
+  }
+
   const before = findBestDisjointMelds(hand, playerIndex);
   // La carte ramassée est placée en dernier : elle est utilisée en priorité
   const after = findBestDisjointMelds([...hand, topDiscard], playerIndex);
-
-  if (
-    !hasOpened &&
-    before.totalPoints < requiredThreshold &&
-    after.totalPoints >= requiredThreshold
-  ) {
-    return 'discard';
-  }
 
   // Un gain strictement positif implique que la carte ramassée est utilisée
   const minGain = difficulty === 'maitre' ? 10 : difficulty === 'salon' ? 14 : 20;

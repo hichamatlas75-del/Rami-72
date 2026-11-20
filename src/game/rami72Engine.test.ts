@@ -7,12 +7,15 @@ import {
   createDoubleDeck,
   decideAIDrawSource,
   findBestDisjointMelds,
+  findBestOpeningMelds,
+  isPureMeld,
   mulberry32,
   planLayoffs,
   sortHand,
   tryExtendTableMeld,
   trySwapJokerInMeld,
   validateMeld,
+  validateOpeningMelds,
 } from './rami72Engine';
 import { Card, Rank, Suit } from './types';
 
@@ -335,8 +338,8 @@ describe('rami72Engine', () => {
       expect(a.map((x) => x.id)).not.toEqual(c.map((x) => x.id));
     });
 
-    it('conserves Jokers on equal meld points and supports canOpen/canGoOut', () => {
-      const hand = [
+    it('conserves Jokers on equal meld points and enforces Trio+Suite opening in canOpen/canGoOut', () => {
+      const setsOnlyHand = [
         card('A', 'hearts'),
         card('A', 'diamonds'),
         card('A', 'clubs'),
@@ -344,15 +347,30 @@ describe('rami72Engine', () => {
         card('7', 'hearts'),
         card('7', 'diamonds'),
         card('7', 'clubs'),
-        card('7', 'spades'), // 28 pts -> 72 total, no run possible with 1 joker
-        joker(1), // 1 card left to discard -> canGoOut = true
+        card('7', 'spades'), // 28 pts -> 72 total, no run
+        joker(1), // 1 card left to discard -> canGoOut = true once opened
       ];
-      const best = findBestDisjointMelds(hand, 0);
+      const best = findBestDisjointMelds(setsOnlyHand, 0);
       expect(best.totalPoints).toBe(72);
       expect(best.usedCardIds.has(joker(1).id)).toBe(false);
-      expect(canOpen(hand, 0, 72)).toBe(true);
-      expect(canOpen(hand, 0, 73)).toBe(false);
-      expect(canGoOut(hand, 0)).toBe(true);
+      // Deux carrés sans suite ne permettent pas d'ouvrir au Rami 72
+      expect(canOpen(setsOnlyHand, 0, 72)).toBe(false);
+      expect(canGoOut(setsOnlyHand, 0)).toBe(true);
+
+      const legalOpeningHand = [
+        card('A', 'hearts'),
+        card('A', 'diamonds'),
+        card('A', 'clubs'),
+        card('A', 'spades'), // 44 pts pure set
+        card('9', 'spades'),
+        card('10', 'spades'),
+        card('V', 'spades'), // 29 pts pure run -> 73 pure pts
+        joker(1), // 1 card left to discard
+      ];
+      expect(canOpen(legalOpeningHand, 0, 72)).toBe(true);
+      expect(canOpen(legalOpeningHand, 0, 73)).toBe(true);
+      expect(canOpen(legalOpeningHand, 0, 74)).toBe(false);
+      expect(canGoOut(legalOpeningHand, 0, false, 72)).toBe(true);
     });
 
     it('executes Joker swaps before extensions in planLayoffs and respects keepAtLeast', () => {
@@ -424,6 +442,189 @@ describe('rami72Engine', () => {
         canDrawDiscard: false,
       });
       expect(blockedDraw).toBe('stock');
+    });
+  });
+
+  describe('Rami 72 opening rules (Trio + Suite + 72 pure pts)', () => {
+    it('validateOpeningMelds enforces pure set, pure run, and 72 pure points minimum', () => {
+      const pureSetKings = validateMeld(
+        [card('R', 'hearts'), card('R', 'diamonds'), card('R', 'clubs')],
+        0
+      )!; // 30 pts
+      const pureSetAces = validateMeld(
+        [card('A', 'hearts'), card('A', 'diamonds'), card('A', 'clubs'), card('A', 'spades')],
+        0
+      )!; // 44 pts
+      const pureRunTenToKing = validateMeld(
+        [card('10', 'spades'), card('V', 'spades'), card('D', 'spades'), card('R', 'spades')],
+        0
+      )!; // 40 pts
+      const pureRunSmall = validateMeld(
+        [card('9', 'hearts'), card('10', 'hearts'), card('V', 'hearts')],
+        0
+      )!; // 29 pts
+      const jokerSetEights = validateMeld(
+        [card('8', 'clubs'), card('8', 'spades'), joker(1)],
+        0
+      )!; // 24 pts (impure)
+
+      // 1. Two pure sets without a pure run -> rejected even >= 72
+      const setsOnly = validateOpeningMelds([pureSetAces, pureSetKings], 72);
+      expect(setsOnly.valid).toBe(false);
+      expect(setsOnly.hasPureSet).toBe(true);
+      expect(setsOnly.hasPureRun).toBe(false);
+
+      // 2. Two pure runs without a pure set -> rejected even >= 72
+      const runsOnly = validateOpeningMelds([pureRunTenToKing, pureRunTenToKing], 72);
+      expect(runsOnly.valid).toBe(false);
+      expect(runsOnly.hasPureSet).toBe(false);
+      expect(runsOnly.hasPureRun).toBe(true);
+
+      // 3. Pure set + pure run < 72 pts plus Joker meld bringing total >= 72 -> rejected
+      const jokerUsedFor72 = validateOpeningMelds(
+        [pureSetKings, pureRunSmall, jokerSetEights],
+        72
+      ); // 30 + 29 = 59 pure, 83 total
+      expect(jokerUsedFor72.valid).toBe(false);
+      expect(jokerUsedFor72.purePoints).toBe(59);
+      expect(jokerUsedFor72.totalPoints).toBe(83);
+      expect(jokerUsedFor72.meetsPureMin).toBe(false);
+
+      // 4. Only set has a Joker + pure run >= 72 total -> rejected
+      const impureSetOnly = validateOpeningMelds(
+        [
+          validateMeld([card('R', 'hearts'), card('R', 'diamonds'), joker(2)], 0)!,
+          validateMeld(
+            [card('8', 'clubs'), card('9', 'clubs'), card('10', 'clubs'), card('V', 'clubs'), card('D', 'clubs')],
+            0
+          )!,
+        ],
+        72
+      ); // 30 impure + 47 pure = 77 total
+      expect(impureSetOnly.valid).toBe(false);
+      expect(impureSetOnly.hasPureSet).toBe(false);
+
+      // 5. Valid pure set + pure run >= 72 + extra Joker meld (also overbidding another opener)
+      const pureBase74 = validateOpeningMelds([pureSetAces, pureRunSmall], 72);
+      expect(pureBase74.valid).toBe(true);
+      expect(pureBase74.purePoints).toBe(73);
+
+      const withExtraJoker = validateOpeningMelds(
+        [pureSetAces, pureRunSmall, jokerSetEights],
+        90
+      ); // 73 pure, 97 total >= 90
+      expect(withExtraJoker.valid).toBe(true);
+      expect(withExtraJoker.purePoints).toBe(73);
+      expect(withExtraJoker.totalPoints).toBe(97);
+
+      const failHigherThreshold = validateOpeningMelds(
+        [pureSetAces, pureRunSmall, jokerSetEights],
+        98
+      );
+      expect(failHigherThreshold.valid).toBe(false);
+      expect(failHigherThreshold.meetsThreshold).toBe(false);
+    });
+
+    it('findBestOpeningMelds rejects <72 pure points even with Jokers, and finds Trio+Suite+72 pure base before adding Jokers', () => {
+      // Only 59 pure pts (30 + 29) + Joker meld (30) = 89 unconstrained, must NOT open
+      const insufficientPureHand = [
+        card('R', 'hearts'),
+        card('R', 'diamonds'),
+        card('R', 'clubs'), // 30 pure
+        card('9', 'spades'),
+        card('10', 'spades'),
+        card('V', 'spades'), // 29 pure
+        card('D', 'hearts'),
+        card('D', 'diamonds'),
+        joker(1), // would add 30 with Joker
+      ];
+      expect(findBestDisjointMelds(insufficientPureHand, 0).totalPoints).toBeGreaterThanOrEqual(72);
+      expect(findBestOpeningMelds(insufficientPureHand, 0, 72).melds).toHaveLength(0);
+
+      // Pure base = 76 pts (30 + 40 + 6) + extra Joker meld (24) = 100 pts total
+      const validWithExtraJokerHand = [
+        card('R', 'hearts'),
+        card('R', 'diamonds'),
+        card('R', 'clubs'), // 30 pure set
+        card('10', 'spades'),
+        card('V', 'spades'),
+        card('D', 'spades'),
+        card('R', 'spades'), // 40 pure run
+        card('2', 'hearts'),
+        card('2', 'diamonds'),
+        card('2', 'clubs'), // 6 pure set -> 76 pure
+        card('8', 'clubs'),
+        card('8', 'diamonds'),
+        joker(1), // 24 impure -> 100 total
+      ];
+      const sol = findBestOpeningMelds(validWithExtraJokerHand, 0, 72);
+      expect(sol.melds.length).toBe(4);
+      expect(sol.totalPoints).toBe(100);
+      expect(validateOpeningMelds(sol.melds, 72).valid).toBe(true);
+      expect(validateOpeningMelds(sol.melds, 95).valid).toBe(true);
+    });
+
+    it('findBestOpeningMelds avoids greedily breaking a pure Trio/Suite when a Joker could attach to it', () => {
+      // Pure 72: [R♥,R♦,R♣] (30) + [V♠,D♠,R♠] (30) + [4♠,4♥,4♣] (12) = 72.
+      // Unrestricted findBestDisjointMelds puts Joker into R-carré (40, impure), leaving only 42 pure pts!
+      const trapHand = [
+        card('R', 'hearts'),
+        card('R', 'diamonds'),
+        card('R', 'clubs'),
+        card('V', 'spades'),
+        card('D', 'spades'),
+        card('R', 'spades'),
+        card('4', 'spades'),
+        card('4', 'hearts'),
+        card('4', 'clubs'),
+        joker(1),
+      ];
+      const unrestricted = findBestDisjointMelds(trapHand, 0);
+      expect(validateOpeningMelds(unrestricted.melds, 72).valid).toBe(false);
+
+      const opening = findBestOpeningMelds(trapHand, 0, 72);
+      expect(opening.melds).toHaveLength(3);
+      expect(opening.totalPoints).toBe(72);
+      expect(opening.melds.every(isPureMeld)).toBe(true);
+      expect(validateOpeningMelds(opening.melds, 72).valid).toBe(true);
+    });
+
+    it('findBestOpeningMelds supports duplicate copies inside the minimal pure base and AI discard draw picks opening card', () => {
+      const duplicateBaseHand = [
+        card('10', 'spades', 0),
+        card('V', 'spades', 0),
+        card('D', 'spades', 0), // 30 pure run
+        card('10', 'spades', 1),
+        card('V', 'spades', 1),
+        card('D', 'spades', 1), // 30 pure run
+        card('4', 'hearts'),
+        card('4', 'diamonds'),
+        card('4', 'clubs'), // 12 pure set -> 72 pure
+      ];
+      const dupSol = findBestOpeningMelds(duplicateBaseHand, 1, 72);
+      expect(dupSol.totalPoints).toBe(72);
+      expect(validateOpeningMelds(dupSol.melds, 72).valid).toBe(true);
+
+      // AI unopened holding [R♥,R♦,R♣] (30) + [10♠,V♠] + [4♥,4♦,4♣] (12) -> D♠ on tapis completes 72 pure Trio+Suite!
+      const drawChoice = decideAIDrawSource({
+        hand: [
+          card('R', 'hearts'),
+          card('R', 'diamonds'),
+          card('R', 'clubs'),
+          card('10', 'spades'),
+          card('V', 'spades'),
+          card('4', 'hearts'),
+          card('4', 'diamonds'),
+          card('4', 'clubs'),
+        ],
+        topDiscard: card('D', 'spades'),
+        hasOpened: false,
+        tableMelds: [],
+        playerIndex: 1,
+        requiredThreshold: 72,
+        difficulty: 'salon',
+      });
+      expect(drawChoice).toBe('discard');
     });
   });
 });

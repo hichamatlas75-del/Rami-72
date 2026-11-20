@@ -85,6 +85,7 @@ interface PlayingCardProps {
   selected?: boolean;
   moving?: boolean;
   dropTarget?: boolean;
+  newlyDrawn?: boolean;
   disabled?: boolean;
   highlighted?: boolean;
   /** Shown on a Joker placed inside a table meld to indicate which card it replaces */
@@ -100,6 +101,7 @@ export function PlayingCard({
   selected = false,
   moving = false,
   dropTarget = false,
+  newlyDrawn = false,
   disabled = false,
   highlighted = false,
   represents,
@@ -117,6 +119,8 @@ export function PlayingCard({
           ? 'border-[#E5C158] ring-2 ring-[#38BDF8]/80 shadow-[0_8px_20px_rgba(56,189,248,0.3)]'
           : selected
           ? 'border-[#D4AF37] ring-2 ring-[#E5C158] shadow-[0_12px_24px_rgba(212,175,55,0.42)]'
+          : newlyDrawn
+          ? 'border-[#10B981] ring-2 ring-[#34D399] shadow-[0_8px_20px_rgba(16,185,129,0.38)]'
           : 'border-[#C9A033] shadow-[0_6px_14px_rgba(0,0,0,0.38)]'
       }`}
     >
@@ -184,6 +188,8 @@ export function PlayingCard({
               ? 'border-[#E5C158] ring-2 ring-[#38BDF8]/80 shadow-[0_8px_20px_rgba(56,189,248,0.3)]'
               : selected
               ? 'border-[#D4AF37] ring-2 ring-[#E5C158] shadow-[0_12px_24px_rgba(212,175,55,0.4)]'
+              : newlyDrawn
+              ? 'border-[#10B981] ring-2 ring-[#34D399] shadow-[0_8px_20px_rgba(16,185,129,0.38)]'
               : highlighted
               ? 'border-[#D4AF37] ring-1 ring-[#D4AF37]/80 shadow-[0_8px_18px_rgba(212,175,55,0.28)]'
               : 'border-[#D7D0C0] shadow-[0_5px_14px_rgba(0,0,0,0.36)]'
@@ -259,11 +265,13 @@ export function PlayingCard({
     })()
   );
 
-  const label = card.isJoker
+  const baseLabel = card.isJoker
     ? represents
       ? `Joker remplaçant ${RANK_LABEL[represents.rank]} de ${SUIT_META[represents.suit].label}`
       : 'Joker'
     : `${RANK_LABEL[card.rank!]} de ${SUIT_META[card.suit!].label}`;
+
+  const label = newlyDrawn ? `${baseLabel} (nouvelle carte piochée)` : baseLabel;
 
   if (interactive) {
     return (
@@ -281,6 +289,14 @@ export function PlayingCard({
             : 'cursor-pointer hover:-translate-y-2'
         } ${className}`}
       >
+        {newlyDrawn && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-2.5 left-1 z-30 rounded-full bg-[#10B981] px-1.5 py-0.5 font-sans text-[9px] font-bold leading-none tracking-tight text-[#042416] shadow-[0_3px_10px_rgba(16,185,129,0.5)]"
+          >
+            Nouvelle
+          </span>
+        )}
         {cardInner}
       </button>
     );

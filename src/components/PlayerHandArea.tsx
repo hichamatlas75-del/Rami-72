@@ -8,6 +8,11 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
+import {
+  INITIAL_OPENING_PURE_MIN,
+  OpeningValidationResult,
+  isPureMeld,
+} from '../game/rami72Engine';
 import { Card, PlayerConfig, SortMode, TableMeld } from '../game/types';
 import { formatCardShort } from '../game/useRami72Game';
 import { PlayingCard } from './PlayingCard';
@@ -24,6 +29,10 @@ interface PlayerHandAreaProps {
   } | null;
   stagedMelds: TableMeld[];
   stagedTotalPoints: number;
+  stagedOpeningCheck: OpeningValidationResult;
+  directOpeningCheck: OpeningValidationResult;
+  lastDrawnCardId: string | null;
+  lastDrawnCard: Card | null;
   requiredThreshold: number;
   humanOpened: boolean;
   isHumanDraw: boolean;
@@ -54,6 +63,10 @@ export function PlayerHandArea({
   autoCompleteBundle,
   stagedMelds,
   stagedTotalPoints,
+  stagedOpeningCheck,
+  directOpeningCheck,
+  lastDrawnCardId,
+  lastDrawnCard,
   requiredThreshold,
   humanOpened,
   isHumanDraw,
@@ -146,27 +159,63 @@ export function PlayerHandArea({
                 {stagedTotalPoints} / {requiredThreshold} pts
               </strong>
             </span>
-            {stagedMelds.map((m) => (
-              <div
-                key={m.id}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-2.5 py-1 text-xs"
-              >
-                <span className="font-mono text-[#FDFBF7]">
-                  {m.slots.map((s) => formatCardShort(s.card)).join(' ')}
-                </span>
-                <span className="font-mono text-[11px] text-[#E5C158]">
-                  ({m.points})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onUnstageMeld(m.id)}
-                  aria-label="Retirer cette combinaison de la préparation"
-                  className="ml-0.5 rounded p-0.5 text-[#A8BBB2] hover:bg-white/10 hover:text-white"
+            <span
+              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap ${
+                stagedOpeningCheck.hasPureSet
+                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                  : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+              }`}
+            >
+              {stagedOpeningCheck.hasPureSet ? '✓' : '✕'} Trio sans joker
+            </span>
+            <span
+              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap ${
+                stagedOpeningCheck.hasPureRun
+                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                  : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+              }`}
+            >
+              {stagedOpeningCheck.hasPureRun ? '✓' : '✕'} Suite sans joker
+            </span>
+            <span
+              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums whitespace-nowrap ${
+                stagedOpeningCheck.meetsPureMin
+                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                  : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+              }`}
+            >
+              {stagedOpeningCheck.meetsPureMin ? '✓ ' : ''}Sans joker{' '}
+              {stagedOpeningCheck.purePoints}/{INITIAL_OPENING_PURE_MIN} pts
+            </span>
+            {stagedMelds.map((m) => {
+              const pure = isPureMeld(m);
+              return (
+                <div
+                  key={m.id}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-2.5 py-1 text-xs"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+                  <span className="font-mono text-[#FDFBF7]">
+                    {m.slots.map((s) => formatCardShort(s.card)).join(' ')}
+                  </span>
+                  <span
+                    className={`font-mono text-[11px] ${
+                      pure ? 'text-[#E5C158]' : 'text-amber-300'
+                    }`}
+                  >
+                    ({m.points}
+                    {pure ? '' : ' · Joker'})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onUnstageMeld(m.id)}
+                    aria-label="Retirer cette combinaison de la préparation"
+                    className="ml-0.5 rounded p-0.5 text-[#A8BBB2] hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2">
@@ -182,6 +231,7 @@ export function PlayerHandArea({
               type="button"
               disabled={!canCommitStagedOpening}
               onClick={() => onCommitMelds(stagedMelds, true)}
+              title={stagedOpeningCheck.reason}
               className={`min-h-[36px] rounded-lg px-3.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                 canCommitStagedOpening
                   ? 'bg-[#D4AF37] text-[#081510] hover:bg-[#E5C158]'
@@ -190,6 +240,12 @@ export function PlayerHandArea({
             >
               {canCommitStagedOpening
                 ? `Étaler sur le tapis (${stagedTotalPoints} pts)`
+                : !stagedOpeningCheck.hasPureSet
+                ? 'Manque 1 trio sans joker'
+                : !stagedOpeningCheck.hasPureRun
+                ? 'Manque 1 suite sans joker'
+                : !stagedOpeningCheck.meetsPureMin
+                ? `Sans joker : ${stagedOpeningCheck.purePoints}/${INITIAL_OPENING_PURE_MIN} pts`
                 : `Étaler (${stagedTotalPoints}/${requiredThreshold} pts)`}
             </button>
           </div>
@@ -203,6 +259,16 @@ export function PlayerHandArea({
             Main : <strong className="text-white">{visibleHumanHand.length}</strong>{' '}
             {visibleHumanHand.length > 1 ? 'cartes' : 'carte'}
           </span>
+          {lastDrawnCard && (
+            <>
+              <span aria-hidden="true" className="text-white/25">
+                ·
+              </span>
+              <span className="inline-flex items-center rounded-md border border-[#34D399]/40 bg-[#10B981]/15 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[#6EE7B7] whitespace-nowrap">
+                Piochée : {formatCardShort(lastDrawnCard)}
+              </span>
+            </>
+          )}
           <span aria-hidden="true" className="text-white/25">
             ·
           </span>
@@ -223,7 +289,12 @@ export function PlayerHandArea({
           ) : isHumanPlay ? (
             <span className="font-medium text-[#E4ECE8]">
               {selectedMeldBundle
-                ? selectedMeldBundle.melds.length > 1
+                ? !humanOpened &&
+                  !canDirectOpenWithSelection &&
+                  directOpeningCheck.totalPoints >= requiredThreshold &&
+                  directOpeningCheck.reason
+                  ? directOpeningCheck.reason
+                  : selectedMeldBundle.melds.length > 1
                   ? `${selectedMeldBundle.melds.length} combinaisons valides (${selectedMeldBundle.totalPoints} pts)`
                   : `Combinaison valide (${selectedMeldBundle.melds[0].type === 'run' ? 'Suite' : 'Trio/Carré'} · ${selectedMeldBundle.totalPoints} pts)`
                 : selectedCards.length >= 3
@@ -238,7 +309,7 @@ export function PlayerHandArea({
                   : 'Main prête : étalez puis défaussez votre dernière carte !'
                 : humanOpened
                 ? 'Sélectionnez des cartes pour étaler, compléter ou défausser'
-                : `Sélectionnez vos combinaisons (${requiredThreshold}+ pts) pour étaler ou défaussez 1 carte`}
+                : `Préparez 1 trio + 1 suite + 72 pts sans joker (${requiredThreshold}+ pts total)`}
             </span>
           ) : (
             <span className="text-[#B8C7C0]">
@@ -401,13 +472,14 @@ export function PlayerHandArea({
       {/* Player's Interactive Hand (supports mouse drag & drop + tap-to-move + mobile horizontal scroll) */}
       <div className="w-full overflow-x-auto pb-1">
         <div
-          className={`mx-auto flex w-max min-w-full items-end justify-center px-2 pt-5 ${handOverlapClass}`}
+          className={`mx-auto flex w-max min-w-full items-end justify-center px-2 pt-8 ${handOverlapClass}`}
         >
           {visibleHumanHand.map((card, index) => {
             const isSelected = !reorderMode && selectedIds.has(card.id);
             const isMoving = activeMovingCard?.id === card.id;
             const isDropTarget =
               dragOverCardId === card.id && draggingCardId !== card.id;
+            const isNewlyDrawn = card.id === lastDrawnCardId;
 
             return (
               <div
@@ -445,7 +517,12 @@ export function PlayerHandArea({
                   setDragOverCardId(null);
                 }}
                 style={{
-                  zIndex: isSelected || isMoving ? 40 + index : index + 1,
+                  zIndex:
+                    isSelected || isMoving
+                      ? 40 + index
+                      : isNewlyDrawn
+                      ? 25 + index
+                      : index + 1,
                 }}
                 className={`shrink-0 hover:z-50 focus-within:z-50 ${
                   draggingCardId === card.id ? 'opacity-50' : ''
@@ -458,6 +535,7 @@ export function PlayerHandArea({
                   selected={isSelected}
                   moving={isMoving}
                   dropTarget={isDropTarget}
+                  newlyDrawn={isNewlyDrawn}
                   disabled={!isHumanPlay && !reorderMode}
                   onClick={() => handleCardClick(card.id)}
                 />

@@ -44,7 +44,11 @@ export function GameTable({
     selectedCards,
     selectedMeldBundle,
     autoCompleteBundle,
+    lastDrawnCardId,
+    lastDrawnCard,
     stagedTotalPoints,
+    stagedOpeningCheck,
+    directOpeningCheck,
     extendableMeldIds,
     swappableMeldIds,
     topDiscard,
@@ -288,6 +292,10 @@ export function GameTable({
           autoCompleteBundle={autoCompleteBundle}
           stagedMelds={stagedMelds}
           stagedTotalPoints={stagedTotalPoints}
+          stagedOpeningCheck={stagedOpeningCheck}
+          directOpeningCheck={directOpeningCheck}
+          lastDrawnCardId={lastDrawnCardId}
+          lastDrawnCard={lastDrawnCard}
           requiredThreshold={requiredThreshold}
           humanOpened={humanOpened}
           isHumanDraw={isHumanDraw}

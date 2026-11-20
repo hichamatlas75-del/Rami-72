@@ -56,15 +56,28 @@ export function RulesDrawer({ open, onClose }: RulesDrawerProps) {
             </p>
             <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
               <li>
-                Le <strong className="text-white">premier joueur qui ouvre</strong> doit
-                étaler une ou plusieurs combinaisons totalisant au moins{' '}
-                <strong className="font-mono text-[#E5C158]">72 points</strong>.
+                L&rsquo;<strong className="text-white">ouverture</strong> doit obligatoirement
+                contenir au moins{' '}
+                <strong className="text-[#E5C158]">1 trio/carré sans Joker</strong>,{' '}
+                <strong className="text-[#E5C158]">1 suite sans Joker</strong> et totaliser
+                au moins{' '}
+                <strong className="font-mono text-[#E5C158]">
+                  72 points sans Joker
+                </strong>
+                .
+              </li>
+              <li>
+                Au-delà de ces{' '}
+                <strong className="text-white">72 points sans Joker</strong>, vous pouvez
+                ajouter d&rsquo;autres combinaisons contenant un{' '}
+                <strong className="text-white">Joker</strong> lors de l&rsquo;ouverture (ou
+                ensuite une fois ouvert).
               </li>
               <li>
                 Chaque <strong className="text-white">adversaire qui ouvre ensuite</strong>{' '}
-                doit obligatoirement poser{' '}
+                doit respecter ces mêmes conditions sans Joker et poser{' '}
                 <strong className="text-[#E5C158]">strictement plus</strong> que la dernière
-                ouverture (ex. si Youssef ouvre à 76 pts, il faut au moins 77 pts pour ouvrir).
+                ouverture (ex. si Youssef ouvre à 76 pts, il faut au moins 77 pts au total).
               </li>
             </ul>
           </section>
