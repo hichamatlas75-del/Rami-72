@@ -66,6 +66,8 @@ export interface TableState {
   cumulativePenalty: number[];
   roundsWon: number[];
   roundResult: RoundResult | null;
+  revealWinnerIndex: number | null;
+  revealMeldIds: string[];
   soundCue: SoundCue | null;
 }
 
@@ -141,7 +143,32 @@ function dealNewRound(params: {
     cumulativePenalty,
     roundsWon,
     roundResult: null,
+    revealWinnerIndex: null,
+    revealMeldIds: [],
     soundCue,
+  };
+}
+
+function enterRevealState(
+  prev: TableState,
+  winnerIndex: number,
+  finalHands: Card[][],
+  highlightMeldIds: string[],
+  speechNote?: string
+): TableState {
+  return {
+    ...prev,
+    hands: finalHands,
+    phase: 'ROUND_REVEAL',
+    isInitialTapisCard: false,
+    drawnFromDiscardId: null,
+    revealWinnerIndex: winnerIndex,
+    revealMeldIds: Array.from(new Set(highlightMeldIds)),
+    speech: {
+      ...prev.speech,
+      [winnerIndex]: speechNote ?? 'Étale toute sa main !',
+    },
+    soundCue: nextSoundCue(prev, 'open72'),
   };
 }
 
@@ -186,6 +213,7 @@ function finishRoundState(
     ...prev,
     hands: finalHands,
     phase: prev.roundNumber >= totalRounds ? 'GAME_OVER' : 'ROUND_SUMMARY',
+    revealWinnerIndex: null,
     cumulativePenalty: nextCumulative,
     roundsWon: nextRoundsWon,
     roundResult,
@@ -301,10 +329,52 @@ export function useRami72Game(params: {
     [visibleHumanHand, selectedIds]
   );
 
-  const selectedValidMeld = useMemo(() => {
+  const selectedMeldBundle = useMemo<{
+    melds: TableMeld[];
+    totalPoints: number;
+  } | null>(() => {
     if (!isHumanPlay || selectedCards.length < 3) return null;
-    return validateMeld(selectedCards, 0);
+    const single = validateMeld(selectedCards, 0);
+    if (single) {
+      return { melds: [single], totalPoints: single.points };
+    }
+    if (selectedCards.length >= 6) {
+      const best = findBestDisjointMelds(selectedCards, 0);
+      if (
+        best.melds.length > 0 &&
+        best.usedCardIds.size === selectedCards.length
+      ) {
+        return { melds: best.melds, totalPoints: best.totalPoints };
+      }
+    }
+    return null;
   }, [isHumanPlay, selectedCards]);
+
+  const autoCompleteBundle = useMemo<{
+    melds: TableMeld[];
+    totalPoints: number;
+    remainingCount: number;
+  } | null>(() => {
+    if (!isHumanPlay || stagedMelds.length > 0 || visibleHumanHand.length < 3) {
+      return null;
+    }
+    const best = findBestDisjointMelds(visibleHumanHand, 0);
+    if (best.melds.length === 0) return null;
+    const remainingCount = visibleHumanHand.length - best.usedCardIds.size;
+    if (remainingCount > 1) return null;
+    if (!humanOpened && best.totalPoints < requiredThreshold) return null;
+    return {
+      melds: best.melds,
+      totalPoints: best.totalPoints,
+      remainingCount,
+    };
+  }, [
+    isHumanPlay,
+    stagedMelds.length,
+    visibleHumanHand,
+    humanOpened,
+    requiredThreshold,
+  ]);
 
   const stagedTotalPoints = useMemo(
     () => stagedMelds.reduce((sum, m) => sum + m.points, 0),
@@ -460,12 +530,12 @@ export function useRami72Game(params: {
   );
 
   const handleStageSelectedMeld = useCallback(() => {
-    if (!selectedValidMeld) return;
+    if (!selectedMeldBundle) return;
     ramiAudio.playCardSnap();
-    setStagedMelds((prev) => [...prev, selectedValidMeld]);
+    setStagedMelds((prev) => [...prev, ...selectedMeldBundle.melds]);
     setSelectedIds(new Set());
     setFeedbackMessage(null);
-  }, [selectedValidMeld]);
+  }, [selectedMeldBundle]);
 
   const handleUnstageMeld = useCallback((meldId: string) => {
     setStagedMelds((prev) => prev.filter((m) => m.id !== meldId));
@@ -530,12 +600,20 @@ export function useRami72Game(params: {
         };
 
         if (nextHands[0].length === 0) {
-          return finishRoundState(updatedState, 0, nextHands, totalRounds);
+          return enterRevealState(
+            updatedState,
+            0,
+            nextHands,
+            meldsToCommit.map((m) => m.id),
+            isOpening
+              ? `Étale toute sa main (${totalPts} pts) !`
+              : 'Étale sa dernière combinaison !'
+          );
         }
         return updatedState;
       });
     },
-    [requiredThreshold, totalRounds]
+    [requiredThreshold]
   );
 
   const handleClickTableMeld = useCallback(
@@ -594,7 +672,13 @@ export function useRami72Game(params: {
               soundCue: nextSoundCue(prev, 'meld'),
             };
             if (nextHands[0].length === 0) {
-              return finishRoundState(updated, 0, nextHands, totalRounds);
+              return enterRevealState(
+                updated,
+                0,
+                nextHands,
+                [extended.id],
+                'Complète et vide sa main !'
+              );
             }
             return updated;
           });
@@ -608,7 +692,6 @@ export function useRami72Game(params: {
       swappableMeldIds,
       extendableMeldIds,
       sortMode,
-      totalRounds,
     ]
   );
 
@@ -639,11 +722,12 @@ export function useRami72Game(params: {
       const nextDiscard = [...prev.discard, card];
 
       if (nextHands[0].length === 0) {
-        return finishRoundState(
+        return enterRevealState(
           { ...prev, discard: nextDiscard },
           0,
           nextHands,
-          totalRounds
+          [],
+          `Jette ${formatCardShort(card)} et ferme !`
         );
       }
 
@@ -665,7 +749,6 @@ export function useRami72Game(params: {
     selectedCards,
     state.drawnFromDiscardId,
     state.hands,
-    totalRounds,
   ]);
 
   // AI Effect 1: AI Draw step
@@ -788,6 +871,7 @@ export function useRami72Game(params: {
         let nextLastOpener = prev.lastOpenerIndex;
         let actionNote = '';
         let cueKind: SoundCueKind = 'snap';
+        const changedMeldIds: string[] = [];
 
         // 1. If not opened yet -> check if AI can beat the current threshold
         if (!nextHasOpened[aiIdx]) {
@@ -796,6 +880,7 @@ export function useRami72Game(params: {
           if (best.totalPoints >= req && best.melds.length > 0) {
             hand = hand.filter((c) => !best.usedCardIds.has(c.id));
             tableMelds = [...tableMelds, ...best.melds];
+            changedMeldIds.push(...best.melds.map((m) => m.id));
             nextHasOpened[aiIdx] = true;
             nextOpenedWith[aiIdx] = best.totalPoints;
             nextHighest = best.totalPoints;
@@ -816,6 +901,7 @@ export function useRami72Game(params: {
                   const res = trySwapJokerInMeld(tableMelds[mIdx], hand[cIdx]);
                   if (res) {
                     tableMelds[mIdx] = res.updatedMeld;
+                    changedMeldIds.push(res.updatedMeld.id);
                     hand.splice(cIdx, 1, res.retrievedJoker);
                     if (!actionNote) actionNote = 'Récupère un Joker';
                     if (cueKind === 'snap') cueKind = 'open72';
@@ -832,6 +918,7 @@ export function useRami72Game(params: {
           if (extra.melds.length > 0) {
             hand = hand.filter((c) => !extra.usedCardIds.has(c.id));
             tableMelds = [...tableMelds, ...extra.melds];
+            changedMeldIds.push(...extra.melds.map((m) => m.id));
             if (!actionNote) actionNote = `Pose +${extra.totalPoints} pts`;
             if (cueKind === 'snap') cueKind = 'meld';
           }
@@ -841,6 +928,7 @@ export function useRami72Game(params: {
             if (plan.actions.length > 0) {
               tableMelds = plan.melds;
               hand = plan.hand;
+              changedMeldIds.push(...plan.actions.map((a) => a.meldId));
               const didSwap = plan.actions.some((a) => a.kind === 'swap');
               if (!actionNote) {
                 actionNote = didSwap ? 'Récupère un Joker' : 'Complète le tapis';
@@ -861,6 +949,7 @@ export function useRami72Game(params: {
                   const extended = tryExtendTableMeld(tableMelds[mIdx], [card]);
                   if (extended) {
                     tableMelds[mIdx] = extended;
+                    changedMeldIds.push(extended.id);
                     hand.splice(cIdx, 1);
                     extendedAny = true;
                     if (!actionNote) actionNote = 'Complète le tapis';
@@ -888,7 +977,13 @@ export function useRami72Game(params: {
         };
 
         if (hand.length === 0) {
-          return finishRoundState(baseUpdated, aiIdx, nextHands, totalRounds);
+          return enterRevealState(
+            baseUpdated,
+            aiIdx,
+            nextHands,
+            changedMeldIds,
+            actionNote || 'Étale toute sa main !'
+          );
         }
 
         const opponentMinHandSize = Math.min(
@@ -909,11 +1004,14 @@ export function useRami72Game(params: {
         const nextDiscard = [...prev.discard, discardCard];
 
         if (remainingAfterDiscard.length === 0) {
-          return finishRoundState(
+          return enterRevealState(
             { ...baseUpdated, discard: nextDiscard },
             aiIdx,
             nextHands,
-            totalRounds
+            changedMeldIds,
+            actionNote
+              ? `${actionNote} · Jette ${formatCardShort(discardCard)}`
+              : `Jette ${formatCardShort(discardCard)} et ferme !`
           );
         }
 
@@ -937,7 +1035,45 @@ export function useRami72Game(params: {
     }, 780);
 
     return () => window.clearTimeout(timer);
-  }, [state.phase, state.activePlayer, state.turnStep, difficulty, totalRounds]);
+  }, [state.phase, state.activePlayer, state.turnStep, difficulty]);
+
+  // Reveal winner's laid-down hand on the table before declaring the round/match winner
+  useEffect(() => {
+    if (state.phase !== 'ROUND_REVEAL' || state.revealWinnerIndex === null) {
+      return;
+    }
+
+    const delayMs = state.revealWinnerIndex === 0 ? 1800 : 2800;
+    const timer = window.setTimeout(() => {
+      setState((prev) => {
+        if (prev.phase !== 'ROUND_REVEAL' || prev.revealWinnerIndex === null) {
+          return prev;
+        }
+        return finishRoundState(
+          prev,
+          prev.revealWinnerIndex,
+          prev.hands,
+          totalRounds
+        );
+      });
+    }, delayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [state.phase, state.revealWinnerIndex, totalRounds]);
+
+  const proceedFromReveal = useCallback(() => {
+    setState((prev) => {
+      if (prev.phase !== 'ROUND_REVEAL' || prev.revealWinnerIndex === null) {
+        return prev;
+      }
+      return finishRoundState(
+        prev,
+        prev.revealWinnerIndex,
+        prev.hands,
+        totalRounds
+      );
+    });
+  }, [totalRounds]);
 
   // Keyboard shortcuts (Escape clears selection / closes rules, bare R toggles rules)
   useEffect(() => {
@@ -1008,9 +1144,8 @@ export function useRami72Game(params: {
   const canDirectOpenWithSelection =
     isHumanPlay &&
     !humanOpened &&
-    stagedMelds.length === 0 &&
-    selectedValidMeld !== null &&
-    selectedValidMeld.points >= requiredThreshold;
+    selectedMeldBundle !== null &&
+    stagedTotalPoints + selectedMeldBundle.totalPoints >= requiredThreshold;
 
   const canCommitStagedOpening =
     isHumanPlay &&
@@ -1046,7 +1181,8 @@ export function useRami72Game(params: {
     requiredThreshold,
     visibleHumanHand,
     selectedCards,
-    selectedValidMeld,
+    selectedMeldBundle,
+    autoCompleteBundle,
     stagedTotalPoints,
     extendableMeldIds,
     swappableMeldIds,
@@ -1066,6 +1202,7 @@ export function useRami72Game(params: {
     handleCommitMelds,
     handleClickTableMeld,
     handleHumanDiscard,
+    proceedFromReveal,
     handleNextRound,
     handleRestartMatch,
   };

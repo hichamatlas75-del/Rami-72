@@ -9,6 +9,7 @@ interface TableMeldsCanvasProps {
   humanOpened: boolean;
   extendableMeldIds: Set<string>;
   swappableMeldIds: Set<string>;
+  revealMeldIds?: Set<string>;
   onClickTableMeld: (meld: TableMeld) => void;
 }
 
@@ -18,6 +19,7 @@ export function TableMeldsCanvas({
   humanOpened,
   extendableMeldIds,
   swappableMeldIds,
+  revealMeldIds,
   onClickTableMeld,
 }: TableMeldsCanvasProps) {
   return (
@@ -60,6 +62,7 @@ export function TableMeldsCanvas({
               const canExtend = extendableMeldIds.has(meld.id);
               const canSwap = swappableMeldIds.has(meld.id);
               const isTarget = canExtend || canSwap;
+              const isRevealedWin = revealMeldIds?.has(meld.id) ?? false;
               const ownerName = players[meld.ownerIndex]?.name ?? '';
 
               return (
@@ -77,6 +80,8 @@ export function TableMeldsCanvas({
                     className={`group flex max-w-full flex-col items-start rounded-xl border p-2 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] ${
                       isTarget
                         ? 'cursor-pointer border-[#E5C158] bg-[#163C2B]/90 shadow-[0_0_20px_rgba(212,175,55,0.28)] hover:bg-[#1C4A35]'
+                        : isRevealedWin
+                        ? 'cursor-default border-[#E5C158]/80 bg-[#143728]/90 shadow-[0_0_22px_rgba(212,175,55,0.26)]'
                         : 'cursor-default border-white/10 bg-[#081A13]/75'
                     }`}
                   >
@@ -94,6 +99,10 @@ export function TableMeldsCanvas({
                       ) : canExtend ? (
                         <span className="font-semibold text-[#E5C158]">
                           + Compléter
+                        </span>
+                      ) : isRevealedWin ? (
+                        <span className="font-semibold text-[#E5C158]">
+                          Étalé
                         </span>
                       ) : null}
                     </div>

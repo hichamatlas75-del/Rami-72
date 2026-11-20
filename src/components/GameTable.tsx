@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BookOpen, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { BookOpen, RotateCcw, Trophy, Volume2, VolumeX } from 'lucide-react';
 import feltTableImage from '../assets/images/rami_felt_table.jpg';
 import { Difficulty, PlayerCount, TotalRounds } from '../game/types';
 import { useRami72Game } from '../game/useRami72Game';
@@ -24,6 +24,7 @@ export function GameTable({
   onExitToMenu,
 }: GameTableProps) {
   const [feltFailed, setFeltFailed] = useState(false);
+  const [inspectingTable, setInspectingTable] = useState(false);
 
   const {
     state,
@@ -41,7 +42,8 @@ export function GameTable({
     requiredThreshold,
     visibleHumanHand,
     selectedCards,
-    selectedValidMeld,
+    selectedMeldBundle,
+    autoCompleteBundle,
     stagedTotalPoints,
     extendableMeldIds,
     swappableMeldIds,
@@ -61,14 +63,25 @@ export function GameTable({
     handleCommitMelds,
     handleClickTableMeld,
     handleHumanDiscard,
+    proceedFromReveal,
     handleNextRound,
     handleRestartMatch,
   } = useRami72Game({ playerCount, totalRounds, difficulty });
 
   const opponents = state.players.slice(1);
+  const revealMeldSet = useMemo(
+    () => new Set(state.revealMeldIds),
+    [state.revealMeldIds]
+  );
+  const isSummaryPhase =
+    state.phase === 'ROUND_SUMMARY' || state.phase === 'GAME_OVER';
+  const revealWinner =
+    state.phase === 'ROUND_REVEAL' && state.revealWinnerIndex !== null
+      ? state.players[state.revealWinnerIndex]
+      : null;
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-[#07130E] text-[#F5F2EB]">
+    <div className="flex min-h-[100dvh] w-full flex-col bg-[#07130E] text-[#F5F2EB] lg:h-screen lg:overflow-hidden">
       {/* Strict 3-Zone Top Bar */}
       <header className="z-30 flex items-center justify-between gap-3 border-b border-white/10 bg-[#081510]/95 px-4 py-2.5 sm:px-6">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -152,7 +165,10 @@ export function GameTable({
 
           <button
             type="button"
-            onClick={handleRestartMatch}
+            onClick={() => {
+              setInspectingTable(false);
+              handleRestartMatch();
+            }}
             aria-label="Recommencer la partie"
             title="Recommencer la partie"
             className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-lg text-[#D4DDD9] shrink-0 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158]"
@@ -163,7 +179,7 @@ export function GameTable({
       </header>
 
       {/* Main Felt Card Table */}
-      <main className="relative flex flex-1 flex-col justify-between overflow-hidden felt-surface">
+      <main className="relative flex flex-1 flex-col justify-between overflow-x-hidden lg:overflow-hidden felt-surface">
         {!feltFailed && (
           <img
             src={feltTableImage}
@@ -216,15 +232,60 @@ export function GameTable({
             humanOpened={humanOpened}
             extendableMeldIds={extendableMeldIds}
             swappableMeldIds={swappableMeldIds}
+            revealMeldIds={
+              state.phase === 'ROUND_REVEAL' || inspectingTable
+                ? revealMeldSet
+                : undefined
+            }
             onClickTableMeld={handleClickTableMeld}
           />
         </section>
+
+        {revealWinner && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="relative z-20 mx-auto mb-1 flex w-[calc(100%-2rem)] max-w-2xl flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E5C158]/60 bg-[#0B241A]/95 px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+          >
+            <div className="flex items-center gap-2 text-xs sm:text-sm">
+              <Trophy className="h-4 w-4 shrink-0 text-[#E5C158]" />
+              <span className="font-medium text-[#FDFBF7]">
+                {revealWinner.isHuman
+                  ? 'Vous étalez toute votre main sur le tapis !'
+                  : `${revealWinner.name} étale sa main sur le tapis !`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={proceedFromReveal}
+              className="min-h-[34px] rounded-lg bg-[#D4AF37] px-3.5 py-1 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158]"
+            >
+              Voir le classement
+            </button>
+          </div>
+        )}
+
+        {isSummaryPhase && inspectingTable && (
+          <div className="relative z-20 mx-auto mb-1 flex w-[calc(100%-2rem)] max-w-xl flex-wrap items-center justify-between gap-3 rounded-xl border border-[#D4AF37]/50 bg-[#0B241A]/95 px-4 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.45)]">
+            <span className="text-xs font-medium text-[#E4ECE8] sm:text-sm">
+              Inspection du tapis final
+            </span>
+            <button
+              type="button"
+              onClick={() => setInspectingTable(false)}
+              className="min-h-[34px] rounded-lg bg-[#D4AF37] px-3.5 py-1 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158]"
+            >
+              Afficher le classement
+            </button>
+          </div>
+        )}
 
         <PlayerHandArea
           visibleHumanHand={visibleHumanHand}
           selectedIds={selectedIds}
           selectedCards={selectedCards}
-          selectedValidMeld={selectedValidMeld}
+          selectedMeldBundle={selectedMeldBundle}
+          autoCompleteBundle={autoCompleteBundle}
           stagedMelds={stagedMelds}
           stagedTotalPoints={stagedTotalPoints}
           requiredThreshold={requiredThreshold}
@@ -250,17 +311,23 @@ export function GameTable({
         />
       </main>
 
-      {(state.phase === 'ROUND_SUMMARY' || state.phase === 'GAME_OVER') &&
-        state.roundResult && (
-          <RoundModal
-            result={state.roundResult}
-            totalRounds={totalRounds}
-            isGameOver={state.phase === 'GAME_OVER'}
-            onNextRound={handleNextRound}
-            onRestartMatch={handleRestartMatch}
-            onReturnMenu={onExitToMenu}
-          />
-        )}
+      {isSummaryPhase && !inspectingTable && state.roundResult && (
+        <RoundModal
+          result={state.roundResult}
+          totalRounds={totalRounds}
+          isGameOver={state.phase === 'GAME_OVER'}
+          onInspectTable={() => setInspectingTable(true)}
+          onNextRound={() => {
+            setInspectingTable(false);
+            handleNextRound();
+          }}
+          onRestartMatch={() => {
+            setInspectingTable(false);
+            handleRestartMatch();
+          }}
+          onReturnMenu={onExitToMenu}
+        />
+      )}
 
       <RulesDrawer open={rulesOpen} onClose={() => setRulesOpen(false)} />
     </div>

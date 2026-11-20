@@ -16,7 +16,12 @@ interface PlayerHandAreaProps {
   visibleHumanHand: Card[];
   selectedIds: Set<string>;
   selectedCards: Card[];
-  selectedValidMeld: TableMeld | null;
+  selectedMeldBundle: { melds: TableMeld[]; totalPoints: number } | null;
+  autoCompleteBundle: {
+    melds: TableMeld[];
+    totalPoints: number;
+    remainingCount: number;
+  } | null;
   stagedMelds: TableMeld[];
   stagedTotalPoints: number;
   requiredThreshold: number;
@@ -45,7 +50,8 @@ export function PlayerHandArea({
   visibleHumanHand,
   selectedIds,
   selectedCards,
-  selectedValidMeld,
+  selectedMeldBundle,
+  autoCompleteBundle,
   stagedMelds,
   stagedTotalPoints,
   requiredThreshold,
@@ -172,15 +178,20 @@ export function PlayerHandArea({
               <Undo2 className="h-3.5 w-3.5" />
               Annuler
             </button>
-            {canCommitStagedOpening && (
-              <button
-                type="button"
-                onClick={() => onCommitMelds(stagedMelds, true)}
-                className="min-h-[36px] rounded-lg bg-[#D4AF37] px-3.5 py-1 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158]"
-              >
-                Étaler sur le tapis ({stagedTotalPoints} pts)
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={!canCommitStagedOpening}
+              onClick={() => onCommitMelds(stagedMelds, true)}
+              className={`min-h-[36px] rounded-lg px-3.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                canCommitStagedOpening
+                  ? 'bg-[#D4AF37] text-[#081510] hover:bg-[#E5C158]'
+                  : 'cursor-not-allowed border border-white/15 bg-white/[0.06] text-[#9BB0A7]'
+              }`}
+            >
+              {canCommitStagedOpening
+                ? `Étaler sur le tapis (${stagedTotalPoints} pts)`
+                : `Étaler (${stagedTotalPoints}/${requiredThreshold} pts)`}
+            </button>
           </div>
         </div>
       )}
@@ -207,17 +218,27 @@ export function PlayerHandArea({
             <span className="font-medium text-[#E5C158]">
               {isInitialTapisCard
                 ? 'À vous · Prenez la 15e carte dévoilée ou piochez caché'
-                : 'À vous · Piochez une carte cachée'}
+                : 'À vous · Piochez d’abord une carte cachée'}
             </span>
           ) : isHumanPlay ? (
             <span className="font-medium text-[#E4ECE8]">
-              {selectedValidMeld
-                ? `Combinaison valide (${selectedValidMeld.type === 'run' ? 'Suite' : 'Trio/Carré'} · ${selectedValidMeld.points} pts)`
+              {selectedMeldBundle
+                ? selectedMeldBundle.melds.length > 1
+                  ? `${selectedMeldBundle.melds.length} combinaisons valides (${selectedMeldBundle.totalPoints} pts)`
+                  : `Combinaison valide (${selectedMeldBundle.melds[0].type === 'run' ? 'Suite' : 'Trio/Carré'} · ${selectedMeldBundle.totalPoints} pts)`
+                : selectedCards.length >= 3
+                ? humanOpened
+                  ? `${selectedCards.length} cartes · Sélection invalide (ou touchez le tapis)`
+                  : `${selectedCards.length} cartes · Formez une suite ou un trio/carré valide`
                 : selectedCards.length > 0
                 ? `${selectedCards.length} ${selectedCards.length > 1 ? 'cartes sélectionnées' : 'carte sélectionnée'}`
+                : autoCompleteBundle
+                ? autoCompleteBundle.remainingCount === 0
+                  ? 'Toute votre main est prête à être étalée !'
+                  : 'Main prête : étalez puis défaussez votre dernière carte !'
                 : humanOpened
-                ? 'Sélectionnez des cartes pour poser, compléter ou défausser'
-                : `Sélectionnez des cartes pour préparer ${requiredThreshold}+ pts ou défaussez 1 carte`}
+                ? 'Sélectionnez des cartes pour étaler, compléter ou défausser'
+                : `Sélectionnez vos combinaisons (${requiredThreshold}+ pts) pour étaler ou défaussez 1 carte`}
             </span>
           ) : (
             <span className="text-[#B8C7C0]">
@@ -260,17 +281,39 @@ export function PlayerHandArea({
             </div>
           )}
 
+          {/* One-click full hand laydown when entire hand (<= 1 card left) is ready */}
+          {!reorderMode &&
+            isHumanPlay &&
+            selectedCards.length === 0 &&
+            autoCompleteBundle && (
+              <button
+                type="button"
+                onClick={() =>
+                  onCommitMelds(autoCompleteBundle.melds, !humanOpened)
+                }
+                className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 shadow-[0_6px_18px_rgba(212,175,55,0.28)] transition-colors hover:bg-[#E5C158]"
+              >
+                Étaler toute ma main ({autoCompleteBundle.totalPoints} pts)
+              </button>
+            )}
+
           {!reorderMode &&
             isHumanPlay &&
             !humanOpened &&
-            selectedValidMeld &&
+            selectedMeldBundle &&
             (canDirectOpenWithSelection ? (
               <button
                 type="button"
-                onClick={() => onCommitMelds([selectedValidMeld], true)}
+                onClick={() =>
+                  onCommitMelds(
+                    [...stagedMelds, ...selectedMeldBundle.melds],
+                    true
+                  )
+                }
                 className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158]"
               >
-                Étaler sur le tapis ({selectedValidMeld.points} pts)
+                Étaler sur le tapis (
+                {stagedTotalPoints + selectedMeldBundle.totalPoints} pts)
               </button>
             ) : (
               <button
@@ -278,17 +321,17 @@ export function PlayerHandArea({
                 onClick={onStageSelectedMeld}
                 className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158]"
               >
-                Ajouter à ma pose (+{selectedValidMeld.points} pts)
+                Ajouter à ma pose (+{selectedMeldBundle.totalPoints} pts)
               </button>
             ))}
 
-          {!reorderMode && isHumanPlay && humanOpened && selectedValidMeld && (
+          {!reorderMode && isHumanPlay && humanOpened && selectedMeldBundle && (
             <button
               type="button"
-              onClick={() => onCommitMelds([selectedValidMeld], false)}
+              onClick={() => onCommitMelds(selectedMeldBundle.melds, false)}
               className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158]"
             >
-              Poser ({selectedValidMeld.points} pts)
+              Étaler ({selectedMeldBundle.totalPoints} pts)
             </button>
           )}
 

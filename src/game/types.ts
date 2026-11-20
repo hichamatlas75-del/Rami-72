@@ -34,6 +34,7 @@ export type SortMode = 'suit' | 'rank' | 'manual';
 export type GamePhase =
   | 'TITLE_MENU'
   | 'PLAYING'
+  | 'ROUND_REVEAL'
   | 'ROUND_SUMMARY'
   | 'GAME_OVER';
 
