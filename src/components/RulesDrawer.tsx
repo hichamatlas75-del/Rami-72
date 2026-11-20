@@ -97,8 +97,10 @@ export function RulesDrawer({ open, onClose }: RulesDrawerProps) {
             </h3>
             <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
               <li>
-                <strong className="text-white">1. Piocher :</strong> prenez la carte du
-                dessus de la pioche ou de la défausse.
+                <strong className="text-white">1. Piocher :</strong> seule la{' '}
+                <strong className="text-white">première carte dévoilée</strong> (15e carte
+                au tapis en début de manche) peut être prise ; ensuite, tous les joueurs
+                piochent uniquement les <strong className="text-white">cartes cachées</strong>.
               </li>
               <li>
                 <strong className="text-white">2. Poser / Compléter :</strong> préparez vos

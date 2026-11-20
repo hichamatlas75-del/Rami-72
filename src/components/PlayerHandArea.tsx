@@ -1,5 +1,13 @@
-import React from 'react';
-import { ArrowUpDown, Layers, Undo2, X } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Layers,
+  MoveHorizontal,
+  Undo2,
+  X,
+} from 'lucide-react';
 import { Card, PlayerConfig, SortMode, TableMeld } from '../game/types';
 import { formatCardShort } from '../game/useRami72Game';
 import { PlayingCard } from './PlayingCard';
@@ -23,6 +31,8 @@ interface PlayerHandAreaProps {
   canDiscardSelected: boolean;
   sortMode: SortMode;
   onToggleSelectCard: (cardId: string) => void;
+  onReorderHandCard: (fromCardId: string, toCardId: string) => void;
+  onNudgeHandCard: (cardId: string, delta: -1 | 1) => void;
   onStageSelectedMeld: () => void;
   onUnstageMeld: (meldId: string) => void;
   onClearStaging: () => void;
@@ -50,6 +60,8 @@ export function PlayerHandArea({
   canDiscardSelected,
   sortMode,
   onToggleSelectCard,
+  onReorderHandCard,
+  onNudgeHandCard,
   onStageSelectedMeld,
   onUnstageMeld,
   onClearStaging,
@@ -57,6 +69,55 @@ export function PlayerHandArea({
   onDiscardSelected,
   onChangeSortMode,
 }: PlayerHandAreaProps) {
+  const [reorderMode, setReorderMode] = useState(false);
+  const [movingCardId, setMovingCardId] = useState<string | null>(null);
+  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
+  const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
+
+  const activeMovingCard =
+    reorderMode && movingCardId
+      ? visibleHumanHand.find((c) => c.id === movingCardId) ?? null
+      : null;
+
+  const nudgeTargetCard =
+    activeMovingCard ??
+    (!reorderMode && isHumanPlay && selectedCards.length === 1
+      ? selectedCards[0]
+      : null);
+
+  const nudgeTargetIdx = nudgeTargetCard
+    ? visibleHumanHand.findIndex((c) => c.id === nudgeTargetCard.id)
+    : -1;
+
+  const handleToggleReorderMode = () => {
+    setReorderMode((prev) => {
+      const next = !prev;
+      setMovingCardId(null);
+      return next;
+    });
+  };
+
+  const handleCardClick = (cardId: string) => {
+    if (reorderMode) {
+      if (!activeMovingCard) {
+        setMovingCardId(cardId);
+      } else if (activeMovingCard.id === cardId) {
+        setMovingCardId(null);
+      } else {
+        onReorderHandCard(activeMovingCard.id, cardId);
+        setMovingCardId(null);
+      }
+      return;
+    }
+    onToggleSelectCard(cardId);
+  };
+
+  const handleSelectSort = (mode: 'suit' | 'rank') => {
+    setReorderMode(false);
+    setMovingCardId(null);
+    onChangeSortMode(mode);
+  };
+
   const handOverlapClass =
     visibleHumanHand.length >= 13
       ? '-space-x-5 sm:-space-x-4 md:-space-x-3 lg:-space-x-2'
@@ -134,13 +195,19 @@ export function PlayerHandArea({
           <span aria-hidden="true" className="text-white/25">
             ·
           </span>
-          {feedbackMessage ? (
+          {reorderMode ? (
+            <span className="font-medium text-[#38BDF8]">
+              {activeMovingCard
+                ? `Touchez où placer « ${formatCardShort(activeMovingCard)} » (ou ◀ ▶)`
+                : 'Mode déplacement · Touchez la carte à déplacer'}
+            </span>
+          ) : feedbackMessage ? (
             <span className="font-medium text-[#FBBF24]">{feedbackMessage}</span>
           ) : isHumanDraw ? (
             <span className="font-medium text-[#E5C158]">
               {isInitialTapisCard
-                ? 'À vous · Prenez la 15e carte au tapis ou piochez'
-                : 'À vous · Prenez la carte du tapis ou piochez'}
+                ? 'À vous · Prenez la 15e carte dévoilée ou piochez caché'
+                : 'À vous · Piochez une carte cachée'}
             </span>
           ) : isHumanPlay ? (
             <span className="font-medium text-[#E4ECE8]">
@@ -160,7 +227,41 @@ export function PlayerHandArea({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {isHumanPlay &&
+          {/* Quick left/right nudge controls for single selected or picked card */}
+          {nudgeTargetCard && (
+            <div
+              role="group"
+              aria-label="Déplacer la carte dans la main"
+              className="flex items-center gap-0.5 rounded-lg border border-white/15 bg-white/[0.04] p-0.5"
+            >
+              <button
+                type="button"
+                onClick={() => onNudgeHandCard(nudgeTargetCard.id, -1)}
+                disabled={nudgeTargetIdx <= 0}
+                aria-label="Déplacer la carte vers la gauche"
+                title="Déplacer à gauche"
+                className="inline-flex h-[32px] w-[32px] items-center justify-center rounded-md text-[#E4ECE8] transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onNudgeHandCard(nudgeTargetCard.id, 1)}
+                disabled={
+                  nudgeTargetIdx === -1 ||
+                  nudgeTargetIdx >= visibleHumanHand.length - 1
+                }
+                aria-label="Déplacer la carte vers la droite"
+                title="Déplacer à droite"
+                className="inline-flex h-[32px] w-[32px] items-center justify-center rounded-md text-[#E4ECE8] transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {!reorderMode &&
+            isHumanPlay &&
             !humanOpened &&
             selectedValidMeld &&
             (canDirectOpenWithSelection ? (
@@ -181,7 +282,7 @@ export function PlayerHandArea({
               </button>
             ))}
 
-          {isHumanPlay && humanOpened && selectedValidMeld && (
+          {!reorderMode && isHumanPlay && humanOpened && selectedValidMeld && (
             <button
               type="button"
               onClick={() => onCommitMelds([selectedValidMeld], false)}
@@ -191,7 +292,8 @@ export function PlayerHandArea({
             </button>
           )}
 
-          {isHumanPlay &&
+          {!reorderMode &&
+            isHumanPlay &&
             selectedCards.length === 1 &&
             stagedMelds.length === 0 && (
               <button
@@ -206,14 +308,14 @@ export function PlayerHandArea({
 
           <div
             role="group"
-            aria-label="Trier la main"
+            aria-label="Organiser la main"
             className="flex items-center gap-0.5 rounded-lg border border-white/10 bg-white/[0.04] p-0.5"
           >
             <button
               type="button"
-              onClick={() => onChangeSortMode('suit')}
+              onClick={() => handleSelectSort('suit')}
               className={`inline-flex min-h-[34px] items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
-                sortMode === 'suit'
+                !reorderMode && sortMode === 'suit'
                   ? 'bg-[#173A2A] text-[#FDFBF7]'
                   : 'text-[#A6B7AF] hover:text-white'
               }`}
@@ -224,9 +326,9 @@ export function PlayerHandArea({
             </button>
             <button
               type="button"
-              onClick={() => onChangeSortMode('rank')}
+              onClick={() => handleSelectSort('rank')}
               className={`inline-flex min-h-[34px] items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
-                sortMode === 'rank'
+                !reorderMode && sortMode === 'rank'
                   ? 'bg-[#173A2A] text-[#FDFBF7]'
                   : 'text-[#A6B7AF] hover:text-white'
               }`}
@@ -235,30 +337,86 @@ export function PlayerHandArea({
               <ArrowUpDown className="h-3.5 w-3.5" />
               Trios
             </button>
+            <button
+              type="button"
+              onClick={handleToggleReorderMode}
+              aria-pressed={reorderMode}
+              className={`inline-flex min-h-[34px] items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
+                reorderMode
+                  ? 'bg-[#0E3A4D] text-[#7DD3FC] ring-1 ring-[#38BDF8]/50'
+                  : 'text-[#A6B7AF] hover:text-white'
+              }`}
+              title="Déplacer manuellement les cartes de votre main"
+            >
+              <MoveHorizontal className="h-3.5 w-3.5" />
+              {reorderMode ? 'Terminer' : 'Déplacer'}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Player's Interactive Hand (horizontally scrollable on narrow mobile screens) */}
+      {/* Player's Interactive Hand (supports mouse drag & drop + tap-to-move + mobile horizontal scroll) */}
       <div className="w-full overflow-x-auto pb-1">
         <div
           className={`mx-auto flex w-max min-w-full items-end justify-center px-2 pt-5 ${handOverlapClass}`}
         >
           {visibleHumanHand.map((card, index) => {
-            const isSelected = selectedIds.has(card.id);
+            const isSelected = !reorderMode && selectedIds.has(card.id);
+            const isMoving = activeMovingCard?.id === card.id;
+            const isDropTarget =
+              dragOverCardId === card.id && draggingCardId !== card.id;
+
             return (
               <div
                 key={card.id}
-                style={{ zIndex: isSelected ? 40 + index : index + 1 }}
-                className="shrink-0 hover:z-50 focus-within:z-50"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', card.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                  setDraggingCardId(card.id);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverCardId !== card.id) {
+                    setDragOverCardId(card.id);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverCardId === card.id) {
+                    setDragOverCardId(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromId =
+                    draggingCardId || e.dataTransfer.getData('text/plain');
+                  if (fromId && fromId !== card.id) {
+                    onReorderHandCard(fromId, card.id);
+                  }
+                  setDraggingCardId(null);
+                  setDragOverCardId(null);
+                }}
+                onDragEnd={() => {
+                  setDraggingCardId(null);
+                  setDragOverCardId(null);
+                }}
+                style={{
+                  zIndex: isSelected || isMoving ? 40 + index : index + 1,
+                }}
+                className={`shrink-0 hover:z-50 focus-within:z-50 ${
+                  draggingCardId === card.id ? 'opacity-50' : ''
+                } ${!isHumanPlay && !reorderMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
               >
                 <PlayingCard
                   card={card}
                   size="md"
                   interactive
                   selected={isSelected}
-                  disabled={!isHumanPlay}
-                  onClick={() => onToggleSelectCard(card.id)}
+                  moving={isMoving}
+                  dropTarget={isDropTarget}
+                  disabled={!isHumanPlay && !reorderMode}
+                  onClick={() => handleCardClick(card.id)}
                 />
               </div>
             );

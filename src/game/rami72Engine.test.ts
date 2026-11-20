@@ -402,5 +402,28 @@ describe('rami72Engine', () => {
       });
       expect(shed.rank).toBe('R');
     });
+
+    it('preserves hand order in manual sortMode and forbids discard draw when canDrawDiscard is false', () => {
+      const customOrder = [
+        joker(1),
+        card('R', 'diamonds'),
+        card('2', 'clubs'),
+        card('A', 'spades'),
+      ];
+      const kept = sortHand(customOrder, 'manual');
+      expect(kept.map((c) => c.id)).toEqual(customOrder.map((c) => c.id));
+
+      const blockedDraw = decideAIDrawSource({
+        hand: [card('5', 'hearts'), card('6', 'hearts')],
+        topDiscard: joker(2),
+        hasOpened: true,
+        tableMelds: [],
+        playerIndex: 1,
+        requiredThreshold: 72,
+        difficulty: 'maitre',
+        canDrawDiscard: false,
+      });
+      expect(blockedDraw).toBe('stock');
+    });
   });
 });

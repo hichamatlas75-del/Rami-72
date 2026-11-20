@@ -29,7 +29,7 @@ export type TotalRounds = 1 | 3 | 5;
 
 export type Difficulty = 'detente' | 'salon' | 'maitre';
 
-export type SortMode = 'suit' | 'rank';
+export type SortMode = 'suit' | 'rank' | 'manual';
 
 export type GamePhase =
   | 'TITLE_MENU'

@@ -109,7 +109,11 @@ function dealNewRound(params: {
 
   for (let i = 0; i < players.length; i++) {
     const raw = deck.slice(cursor, cursor + 14);
-    hands.push(i === 0 ? sortHand(raw, sortMode) : raw);
+    hands.push(
+      i === 0
+        ? sortHand(raw, sortMode === 'manual' ? 'suit' : sortMode)
+        : raw
+    );
     cursor += 14;
   }
 
@@ -333,12 +337,43 @@ export function useRami72Game(params: {
 
   const handleChangeSortMode = useCallback((mode: SortMode) => {
     setSortMode(mode);
+    if (mode === 'manual') return;
     setState((prev) => {
       const nextHands = [...prev.hands];
       nextHands[0] = sortHand(nextHands[0], mode);
       return { ...prev, hands: nextHands };
     });
   }, []);
+
+  const reorderHandCard = useCallback(
+    (fromCardId: string, toCardId: string) => {
+      if (fromCardId === toCardId || state.phase !== 'PLAYING') return;
+      setSortMode('manual');
+      setState((prev) => {
+        const hand = [...prev.hands[0]];
+        const fromIdx = hand.findIndex((c) => c.id === fromCardId);
+        const toIdx = hand.findIndex((c) => c.id === toCardId);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        const [moved] = hand.splice(fromIdx, 1);
+        hand.splice(toIdx, 0, moved);
+        const nextHands = [...prev.hands];
+        nextHands[0] = hand;
+        return { ...prev, hands: nextHands };
+      });
+    },
+    [state.phase]
+  );
+
+  const nudgeHandCard = useCallback(
+    (cardId: string, delta: -1 | 1) => {
+      const visIdx = visibleHumanHand.findIndex((c) => c.id === cardId);
+      if (visIdx === -1) return;
+      const neighbor = visibleHumanHand[visIdx + delta];
+      if (!neighbor) return;
+      reorderHandCard(cardId, neighbor.id);
+    },
+    [visibleHumanHand, reorderHandCard]
+  );
 
   const toggleSelectCard = useCallback(
     (cardId: string) => {
@@ -371,7 +406,7 @@ export function useRami72Game(params: {
         }
 
         if (source === 'discard') {
-          if (prev.discard.length === 0) return prev;
+          if (!prev.isInitialTapisCard || prev.discard.length === 0) return prev;
           const drawn = prev.discard[prev.discard.length - 1];
           const nextDiscard = prev.discard.slice(0, -1);
           const nextHands = [...prev.hands];
@@ -666,9 +701,10 @@ export function useRami72Game(params: {
           playerIndex: aiIdx,
           requiredThreshold: req,
           difficulty,
+          canDrawDiscard: prev.isInitialTapisCard,
         });
 
-        if (source === 'discard' && topDiscard) {
+        if (source === 'discard' && topDiscard && prev.isInitialTapisCard) {
           const nextHands = [...prev.hands];
           nextHands[aiIdx] = [...nextHands[aiIdx], topDiscard];
           return {
@@ -991,6 +1027,9 @@ export function useRami72Game(params: {
       state.hands[0].length > 1
     );
 
+  const canDrawDiscard =
+    isHumanDraw && state.isInitialTapisCard && topDiscard !== null;
+
   return {
     state,
     sortMode,
@@ -1012,10 +1051,13 @@ export function useRami72Game(params: {
     extendableMeldIds,
     swappableMeldIds,
     topDiscard,
+    canDrawDiscard,
     canDirectOpenWithSelection,
     canCommitStagedOpening,
     canDiscardSelected,
     handleChangeSortMode,
+    reorderHandCard,
+    nudgeHandCard,
     toggleSelectCard,
     handleHumanDraw,
     handleStageSelectedMeld,

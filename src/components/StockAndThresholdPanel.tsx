@@ -15,6 +15,7 @@ interface StockAndThresholdPanelProps {
   topDiscard: Card | null;
   isInitialTapisCard: boolean;
   isHumanDraw: boolean;
+  canDrawDiscard: boolean;
   canDiscardSelected: boolean;
   onDrawStock: () => void;
   onDrawDiscard: () => void;
@@ -33,6 +34,7 @@ export function StockAndThresholdPanel({
   topDiscard,
   isInitialTapisCard,
   isHumanDraw,
+  canDrawDiscard,
   canDiscardSelected,
   onDrawStock,
   onDrawDiscard,
@@ -75,7 +77,7 @@ export function StockAndThresholdPanel({
 
       {/* Pioche & Défausse Interactive Slots */}
       <div className="flex items-center gap-4 sm:gap-5 shrink-0">
-        {/* Pioche */}
+        {/* Pioche (cartes cachées) */}
         <div className="flex flex-col items-center">
           <button
             type="button"
@@ -83,8 +85,8 @@ export function StockAndThresholdPanel({
             disabled={!isHumanDraw || !hasDrawableStock}
             aria-label={
               canRecycleDiscard
-                ? 'Remélanger la défausse et piocher'
-                : `Piocher une carte (${stockCount} restantes)`
+                ? 'Remélanger la défausse et piocher une carte cachée'
+                : `Piocher une carte cachée (${stockCount} restantes)`
             }
             className={`group relative rounded-lg transition-transform duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] ${
               isHumanDraw && hasDrawableStock
@@ -117,27 +119,27 @@ export function StockAndThresholdPanel({
           </span>
         </div>
 
-        {/* Défausse */}
+        {/* Défausse (seule la 15e carte dévoilée du début peut être prise) */}
         <div className="flex flex-col items-center">
           <button
             type="button"
             onClick={() => {
-              if (isHumanDraw && topDiscard) {
+              if (canDrawDiscard) {
                 onDrawDiscard();
               } else if (canDiscardSelected) {
                 onDiscardSelected();
               }
             }}
-            disabled={!(isHumanDraw && topDiscard) && !canDiscardSelected}
+            disabled={!canDrawDiscard && !canDiscardSelected}
             aria-label={
-              isHumanDraw && topDiscard
-                ? `Prendre la carte de la défausse : ${formatCardShort(topDiscard)}`
+              canDrawDiscard && topDiscard
+                ? `Prendre la 15e carte dévoilée : ${formatCardShort(topDiscard)}`
                 : canDiscardSelected
                 ? 'Défausser la carte sélectionnée'
                 : 'Défausse'
             }
             className={`relative rounded-lg transition-transform duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] ${
-              (isHumanDraw && topDiscard) || canDiscardSelected
+              canDrawDiscard || canDiscardSelected
                 ? 'cursor-pointer hover:-translate-y-1 ring-2 ring-[#E5C158]/80 ring-offset-2 ring-offset-[#071610]'
                 : 'cursor-default'
             }`}
@@ -154,8 +156,8 @@ export function StockAndThresholdPanel({
             {canDiscardSelected
               ? 'Défausser ici'
               : isInitialTapisCard && topDiscard
-              ? '15e au tapis'
-              : 'Tapis'}
+              ? '15e dévoilée'
+              : 'Défausse'}
           </span>
         </div>
       </div>

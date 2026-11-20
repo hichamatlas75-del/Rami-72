@@ -83,6 +83,8 @@ interface PlayingCardProps {
   size?: CardSize;
   interactive?: boolean;
   selected?: boolean;
+  moving?: boolean;
+  dropTarget?: boolean;
   disabled?: boolean;
   highlighted?: boolean;
   /** Shown on a Joker placed inside a table meld to indicate which card it replaces */
@@ -96,6 +98,8 @@ export function PlayingCard({
   size = 'md',
   interactive = false,
   selected = false,
+  moving = false,
+  dropTarget = false,
   disabled = false,
   highlighted = false,
   represents,
@@ -107,7 +111,11 @@ export function PlayingCard({
   const cardInner = card.isJoker ? (
     <div
       className={`relative flex h-full w-full flex-col items-center justify-between overflow-hidden rounded-[inherit] card-paper select-none border-[1.5px] ${
-        selected
+        moving
+          ? 'border-[#38BDF8] ring-2 ring-[#38BDF8] shadow-[0_12px_24px_rgba(56,189,248,0.42)]'
+          : dropTarget
+          ? 'border-[#E5C158] ring-2 ring-[#38BDF8]/80 shadow-[0_8px_20px_rgba(56,189,248,0.3)]'
+          : selected
           ? 'border-[#D4AF37] ring-2 ring-[#E5C158] shadow-[0_12px_24px_rgba(212,175,55,0.42)]'
           : 'border-[#C9A033] shadow-[0_6px_14px_rgba(0,0,0,0.38)]'
       }`}
@@ -170,7 +178,11 @@ export function PlayingCard({
       return (
         <div
           className={`relative flex h-full w-full flex-col justify-between overflow-hidden rounded-[inherit] card-paper select-none border ${
-            selected
+            moving
+              ? 'border-[#38BDF8] ring-2 ring-[#38BDF8] shadow-[0_12px_24px_rgba(56,189,248,0.42)]'
+              : dropTarget
+              ? 'border-[#E5C158] ring-2 ring-[#38BDF8]/80 shadow-[0_8px_20px_rgba(56,189,248,0.3)]'
+              : selected
               ? 'border-[#D4AF37] ring-2 ring-[#E5C158] shadow-[0_12px_24px_rgba(212,175,55,0.4)]'
               : highlighted
               ? 'border-[#D4AF37] ring-1 ring-[#D4AF37]/80 shadow-[0_8px_18px_rgba(212,175,55,0.28)]'
@@ -259,13 +271,13 @@ export function PlayingCard({
         type="button"
         onClick={!disabled ? onClick : undefined}
         disabled={disabled}
-        aria-pressed={selected}
+        aria-pressed={selected || moving}
         aria-label={label}
         className={`relative block text-left transition-transform duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] focus-visible:ring-offset-1 focus-visible:ring-offset-[#0C3F2A] ${SIZE_CLASSES[size]} ${
-          selected
+          selected || moving
             ? '-translate-y-4 cursor-pointer'
             : disabled
-            ? 'cursor-default opacity-80'
+            ? 'pointer-events-none opacity-90'
             : 'cursor-pointer hover:-translate-y-2'
         } ${className}`}
       >

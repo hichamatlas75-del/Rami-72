@@ -322,11 +322,12 @@ export function TitleScreen({
 
               <div className="space-y-1.5 border-t border-white/10 pt-4">
                 <h3 className="font-display text-base font-semibold text-[#E5C158]">
-                  04. Compléter et gagner
+                  04. Pioche cachée &amp; complétion
                 </h3>
                 <p className="text-sm leading-relaxed text-[#BAC8C2]">
-                  Une fois ouvert, vous pouvez ajouter vos cartes sur toutes les combinaisons
-                  du tapis et récupérer un Joker. Videz votre main le premier pour gagner !
+                  Seule la 15e carte dévoilée au début peut être prise sur le tapis ; ensuite,
+                  tout le monde pioche caché. Une fois ouvert, complétez le tapis et videz
+                  votre main pour gagner !
                 </p>
               </div>
             </div>

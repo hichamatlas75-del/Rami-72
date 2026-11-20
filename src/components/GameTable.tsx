@@ -46,10 +46,13 @@ export function GameTable({
     extendableMeldIds,
     swappableMeldIds,
     topDiscard,
+    canDrawDiscard,
     canDirectOpenWithSelection,
     canCommitStagedOpening,
     canDiscardSelected,
     handleChangeSortMode,
+    reorderHandCard,
+    nudgeHandCard,
     toggleSelectCard,
     handleHumanDraw,
     handleStageSelectedMeld,
@@ -200,6 +203,7 @@ export function GameTable({
             topDiscard={topDiscard}
             isInitialTapisCard={state.isInitialTapisCard}
             isHumanDraw={isHumanDraw}
+            canDrawDiscard={canDrawDiscard}
             canDiscardSelected={canDiscardSelected}
             onDrawStock={() => handleHumanDraw('stock')}
             onDrawDiscard={() => handleHumanDraw('discard')}
@@ -235,6 +239,8 @@ export function GameTable({
           canDiscardSelected={canDiscardSelected}
           sortMode={sortMode}
           onToggleSelectCard={toggleSelectCard}
+          onReorderHandCard={reorderHandCard}
+          onNudgeHandCard={nudgeHandCard}
           onStageSelectedMeld={handleStageSelectedMeld}
           onUnstageMeld={handleUnstageMeld}
           onClearStaging={handleClearStaging}

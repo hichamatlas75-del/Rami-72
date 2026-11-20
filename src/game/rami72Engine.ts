@@ -122,6 +122,7 @@ export function computeHandPenalty(hand: Card[]): number {
 }
 
 export function sortHand(hand: Card[], mode: SortMode): Card[] {
+  if (mode === 'manual') return [...hand];
   return [...hand].sort((a, b) => {
     if (a.isJoker && !b.isJoker) return 1;
     if (!a.isJoker && b.isJoker) return -1;
@@ -762,6 +763,7 @@ export function decideAIDrawSource(params: {
   playerIndex: number;
   requiredThreshold: number;
   difficulty: Difficulty;
+  canDrawDiscard?: boolean;
 }): 'discard' | 'stock' {
   const {
     hand,
@@ -771,9 +773,10 @@ export function decideAIDrawSource(params: {
     playerIndex,
     requiredThreshold,
     difficulty,
+    canDrawDiscard = true,
   } = params;
 
-  if (!topDiscard) return 'stock';
+  if (!canDrawDiscard || !topDiscard) return 'stock';
   if (topDiscard.isJoker) return 'discard';
 
   if (hasOpened && difficulty !== 'detente') {
