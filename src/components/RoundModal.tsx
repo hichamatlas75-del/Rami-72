@@ -3,6 +3,7 @@ import { Eye } from 'lucide-react';
 import { RoundResult, TotalRounds } from '../game/types';
 
 interface RoundModalProps {
+  isSimple?: boolean;
   result: RoundResult;
   totalRounds: TotalRounds;
   isGameOver: boolean;
@@ -13,6 +14,7 @@ interface RoundModalProps {
 }
 
 export function RoundModal({
+  isSimple = false,
   result,
   totalRounds,
   isGameOver,
@@ -23,9 +25,10 @@ export function RoundModal({
 }: RoundModalProps) {
   const humanWonRound = result.winnerIndex === 0;
 
-  // Overall champion at end of multi-round match: most rounds won, tiebreak lowest penalty points
+  // Overall champion at end of multi-round match: most rounds won, tiebreak lowest penalty points (or fewest cards remaining in Simple)
   const sortedFinal = [...result.standings].sort((a, b) => {
     if (b.roundsWon !== a.roundsWon) return b.roundsWon - a.roundsWon;
+    if (isSimple) return a.cardsRemaining - b.cardsRemaining;
     return a.cumulativePenalty - b.cumulativePenalty;
   });
   const champion = sortedFinal[0];
@@ -35,6 +38,7 @@ export function RoundModal({
     ? sortedFinal
     : [...result.standings].sort((a, b) => {
         if (a.isWinner !== b.isWinner) return a.isWinner ? -1 : 1;
+        if (isSimple) return a.cardsRemaining - b.cardsRemaining;
         if (a.penaltyPoints !== b.penaltyPoints) {
           return a.penaltyPoints - b.penaltyPoints;
         }
@@ -62,12 +66,18 @@ export function RoundModal({
           <span>
             Manche {result.roundNumber} sur {totalRounds}
           </span>
-          {result.highestOpeningScore !== null && (
+          {!isSimple && result.highestOpeningScore !== null && (
             <>
               <span aria-hidden="true">·</span>
               <span className="font-mono tabular-nums">
                 Plus haute ouverture : {result.highestOpeningScore} pts
               </span>
+            </>
+          )}
+          {isSimple && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>Mode Simple · Sans comptage</span>
             </>
           )}
         </div>
@@ -77,12 +87,16 @@ export function RoundModal({
         </h2>
 
         <p className="mt-1.5 text-xs leading-relaxed text-[#B7C7C0] sm:text-sm">
-          {isGameOver
+          {isSimple
+            ? isGameOver
+              ? `Classement final après ${totalRounds} ${totalRounds > 1 ? 'manches' : 'manche'} (aucun comptage de points).`
+              : 'Aucun comptage de points : seul le premier joueur à combiner toute sa main remporte la manche.'
+            : isGameOver
             ? `Classement final après ${totalRounds} ${totalRounds > 1 ? 'manches' : 'manche'} (moins de points de pénalité départage les égalités).`
             : 'Les cartes restantes en main comptent comme points de pénalité.'}
         </p>
 
-        {/* Standings table (compact enough on mobile so all 5 columns fit cleanly) */}
+        {/* Standings table */}
         <div className="mt-4 overflow-x-auto rounded-xl border border-white/10 bg-white/[0.02] sm:mt-5">
           <table className="w-full text-xs sm:text-sm">
             <thead className="border-b border-white/10 bg-white/[0.03] text-[11px] text-[#9DB0A7] sm:text-xs">
@@ -90,20 +104,30 @@ export function RoundModal({
                 <th className="px-2.5 py-2.5 text-left font-medium sm:px-4">
                   Joueur
                 </th>
-                <th className="px-2 py-2.5 text-right font-medium sm:px-3">
-                  <span className="sm:hidden">Ouv.</span>
-                  <span className="hidden sm:inline">Ouverture</span>
-                </th>
+                {!isSimple && (
+                  <th className="px-2 py-2.5 text-right font-medium sm:px-3">
+                    <span className="sm:hidden">Ouv.</span>
+                    <span className="hidden sm:inline">Ouverture</span>
+                  </th>
+                )}
                 <th className="px-2 py-2.5 text-right font-medium sm:px-3">
                   Reste
                 </th>
-                <th className="px-2 py-2.5 text-right font-medium sm:px-3">
-                  <span className="sm:hidden">Pts</span>
-                  <span className="hidden sm:inline">Manche</span>
-                </th>
-                <th className="px-2.5 py-2.5 text-right font-medium text-[#E5C158] sm:px-4">
-                  Total
-                </th>
+                {!isSimple ? (
+                  <>
+                    <th className="px-2 py-2.5 text-right font-medium sm:px-3">
+                      <span className="sm:hidden">Pts</span>
+                      <span className="hidden sm:inline">Manche</span>
+                    </th>
+                    <th className="px-2.5 py-2.5 text-right font-medium text-[#E5C158] sm:px-4">
+                      Total
+                    </th>
+                  </>
+                ) : (
+                  <th className="px-2.5 py-2.5 text-right font-medium text-[#E5C158] sm:px-4">
+                    Victoires
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 font-mono tabular-nums">
@@ -135,36 +159,52 @@ export function RoundModal({
                           {badgeText}
                         </span>
                       )}
-                      {totalRounds > 1 && (
+                      {!isSimple && totalRounds > 1 && (
                         <span className="block text-[11px] text-[#94A99F]">
                           {row.roundsWon}{' '}
                           {row.roundsWon > 1 ? 'manches gagnées' : 'manche gagnée'}
                         </span>
                       )}
                     </td>
+                    {!isSimple && (
+                      <td className="px-2 py-2.5 text-right text-[11px] text-[#C1CEC8] sm:px-3 sm:py-3 sm:text-xs">
+                        {row.openedWith !== null ? (
+                          `${row.openedWith} pts`
+                        ) : (
+                          <>
+                            <span className="sm:hidden">—</span>
+                            <span className="hidden sm:inline">Non ouvert</span>
+                          </>
+                        )}
+                      </td>
+                    )}
                     <td className="px-2 py-2.5 text-right text-[11px] text-[#C1CEC8] sm:px-3 sm:py-3 sm:text-xs">
-                      {row.openedWith !== null ? (
-                        `${row.openedWith} pts`
+                      {row.isWinner ? (
+                        <span className="text-[#6EE7B7]">Étalé</span>
                       ) : (
                         <>
-                          <span className="sm:hidden">—</span>
-                          <span className="hidden sm:inline">Non ouvert</span>
+                          <span className="sm:hidden">{row.cardsRemaining}</span>
+                          <span className="hidden sm:inline">
+                            {row.cardsRemaining}{' '}
+                            {row.cardsRemaining > 1 ? 'cartes' : 'carte'}
+                          </span>
                         </>
                       )}
                     </td>
-                    <td className="px-2 py-2.5 text-right text-[11px] text-[#C1CEC8] sm:px-3 sm:py-3 sm:text-xs">
-                      <span className="sm:hidden">{row.cardsRemaining}</span>
-                      <span className="hidden sm:inline">
-                        {row.cardsRemaining}{' '}
-                        {row.cardsRemaining > 1 ? 'cartes' : 'carte'}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2.5 text-right text-white sm:px-3 sm:py-3">
-                      {row.penaltyPoints === 0 ? '0' : `+${row.penaltyPoints}`}
-                    </td>
-                    <td className="px-2.5 py-2.5 text-right font-semibold text-[#E5C158] sm:px-4 sm:py-3">
-                      {row.cumulativePenalty} pts
-                    </td>
+                    {!isSimple ? (
+                      <>
+                        <td className="px-2 py-2.5 text-right text-white sm:px-3 sm:py-3">
+                          {row.penaltyPoints === 0 ? '0' : `+${row.penaltyPoints}`}
+                        </td>
+                        <td className="px-2.5 py-2.5 text-right font-semibold text-[#E5C158] sm:px-4 sm:py-3">
+                          {row.cumulativePenalty} pts
+                        </td>
+                      </>
+                    ) : (
+                      <td className="px-2.5 py-2.5 text-right font-semibold text-[#E5C158] sm:px-4 sm:py-3">
+                        {row.roundsWon}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

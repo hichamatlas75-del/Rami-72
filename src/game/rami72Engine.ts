@@ -533,14 +533,17 @@ function cloneSolution(s: MeldSolution): MeldSolution {
  * Meilleur ensemble de combinaisons disjointes d'une main.
  * Recherche exacte : on prend la plus petite carte restante ("pivot") et on
  * décide soit de la laisser en main, soit de la placer dans l'une des
- * combinaisons qui la contiennent. Mémoïsé sur l'état (cartes restantes), donc
- * aucune limite arbitraire de candidats ni de branches comme avant.
+ * combinaisons qui la contiennent.
  */
-export function findBestDisjointMelds(
+function solveDisjointMelds(
   hand: Card[],
-  ownerIndex: number
+  ownerIndex: number,
+  optimizeFor: 'points' | 'coverage'
 ): MeldSolution {
-  const cacheKey = `${ownerIndex}:${hand.map((c) => c.id).sort().join(',')}`;
+  const cacheKey = `${optimizeFor}:${ownerIndex}:${hand
+    .map((c) => c.id)
+    .sort()
+    .join(',')}`;
   const cached = meldCache.get(cacheKey);
   if (cached) return cloneSolution(cached);
 
@@ -556,6 +559,11 @@ export function findBestDisjointMelds(
       byKey.set(k, l);
     }
   }
+
+  const candScore = (cand: Candidate) =>
+    optimizeFor === 'coverage'
+      ? (cand.keys.length + cand.jokerCount) * 100 - cand.jokerCount
+      : cand.value;
 
   const cnt = counts.slice();
   let jk = jokers.length;
@@ -592,7 +600,7 @@ export function findBestDisjointMelds(
       if (!cand.keys.every((k) => cnt[k] > 0)) continue;
       for (const k of cand.keys) cnt[k] -= 1;
       jk -= cand.jokerCount;
-      const v = cand.value + solve();
+      const v = candScore(cand) + solve();
       jk += cand.jokerCount;
       for (const k of cand.keys) cnt[k] += 1;
       if (v > best) {
@@ -658,6 +666,20 @@ export function findBestDisjointMelds(
   }
   meldCache.set(cacheKey, result);
   return cloneSolution(result);
+}
+
+export function findBestDisjointMelds(
+  hand: Card[],
+  ownerIndex: number
+): MeldSolution {
+  return solveDisjointMelds(hand, ownerIndex, 'points');
+}
+
+export function findBestCoverageMelds(
+  hand: Card[],
+  ownerIndex: number
+): MeldSolution {
+  return solveDisjointMelds(hand, ownerIndex, 'coverage');
 }
 
 export function isPureMeld(meld: TableMeld): boolean {
@@ -1201,6 +1223,155 @@ export function chooseAIDiscard(params: {
       if (helpsTable) utility -= difficulty === 'maitre' ? 24 : 10;
     }
 
+    if (difficulty === 'detente') {
+      utility += (Math.random() - 0.5) * 14;
+    }
+
+    if (utility > bestUtility) {
+      bestUtility = utility;
+      worstCard = card;
+    }
+  }
+
+  return worstCard;
+}
+
+// ============================================================================
+// MODE SIMPLE (13 cartes, sans comptage, pioche libre tapis/caché)
+// ============================================================================
+
+export interface SimpleWinSolution {
+  canWin: boolean;
+  melds: TableMeld[];
+  discardCard: Card | null;
+}
+
+/**
+ * Vérifie si la main permet de terminer toutes ses combinaisons en mode Simple :
+ * soit en étalant toutes les cartes (ex. 14 cartes combinées),
+ * soit en combinant (N-1) cartes (ex. 13 cartes) et en défaussant 1 carte autorisée.
+ */
+export function findSimpleWinSolution(
+  hand: Card[],
+  ownerIndex: number,
+  forbiddenDiscardId: string | null = null
+): SimpleWinSolution {
+  const empty: SimpleWinSolution = { canWin: false, melds: [], discardCard: null };
+  if (hand.length < 3) return empty;
+
+  const full = findBestCoverageMelds(hand, ownerIndex);
+  if (full.melds.length > 0 && full.usedCardIds.size === hand.length) {
+    return { canWin: true, melds: full.melds, discardCard: null };
+  }
+
+  if (full.melds.length > 0 && hand.length - full.usedCardIds.size === 1) {
+    const leftover = hand.find((c) => !full.usedCardIds.has(c.id)) ?? null;
+    if (leftover && leftover.id !== forbiddenDiscardId) {
+      return { canWin: true, melds: full.melds, discardCard: leftover };
+    }
+  }
+
+  // Si la seule carte restante était la carte interdite (venant juste de la défausse),
+  // vérifie s'il existe une autre carte défaussable qui permet de combiner les N-1 autres.
+  if (forbiddenDiscardId && hand.length >= 4) {
+    const seenSig = new Set<string>();
+    for (const drop of hand) {
+      if (drop.id === forbiddenDiscardId) continue;
+      const sig = drop.isJoker ? 'J' : `${drop.rank}-${drop.suit}`;
+      if (seenSig.has(sig)) continue;
+      seenSig.add(sig);
+
+      const sub = findBestCoverageMelds(
+        hand.filter((c) => c.id !== drop.id),
+        ownerIndex
+      );
+      if (sub.melds.length > 0 && sub.usedCardIds.size === hand.length - 1) {
+        return { canWin: true, melds: sub.melds, discardCard: drop };
+      }
+    }
+  }
+
+  return empty;
+}
+
+export function decideSimpleAIDrawSource(params: {
+  hand: Card[];
+  topDiscard: Card | null;
+  playerIndex: number;
+  difficulty: Difficulty;
+}): 'stock' | 'discard' {
+  const { hand, topDiscard, playerIndex, difficulty } = params;
+  if (!topDiscard) return 'stock';
+
+  const afterHand = [...hand, topDiscard];
+  if (findSimpleWinSolution(afterHand, playerIndex, topDiscard.id).canWin) {
+    return 'discard';
+  }
+
+  if (topDiscard.isJoker) return 'discard';
+
+  const beforeCov = findBestCoverageMelds(hand, playerIndex).usedCardIds.size;
+  let bestPostDiscardCov = 0;
+
+  const seenSig = new Set<string>();
+  for (const drop of hand) {
+    const sig = drop.isJoker ? 'J' : `${drop.rank}-${drop.suit}`;
+    if (seenSig.has(sig)) continue;
+    seenSig.add(sig);
+
+    const trial = hand.filter((c) => c.id !== drop.id);
+    trial.push(topDiscard);
+    const sol = findBestCoverageMelds(trial, playerIndex);
+    if (sol.usedCardIds.has(topDiscard.id) && sol.usedCardIds.size > bestPostDiscardCov) {
+      bestPostDiscardCov = sol.usedCardIds.size;
+    }
+  }
+
+  const gain = bestPostDiscardCov - beforeCov;
+  if (gain >= 3) return 'discard';
+  if (gain >= 1 && difficulty !== 'detente') return 'discard';
+
+  return 'stock';
+}
+
+export function chooseSimpleAIDiscard(params: {
+  hand: Card[];
+  forbiddenDiscardId: string | null;
+  difficulty: Difficulty;
+  playerIndex: number;
+  discardPile?: Card[];
+}): Card {
+  const {
+    hand,
+    forbiddenDiscardId,
+    difficulty,
+    playerIndex,
+    discardPile = [],
+  } = params;
+
+  if (hand.length === 1) return hand[0];
+
+  const candidates = hand.filter((c) => c.id !== forbiddenDiscardId);
+  const pool = candidates.length > 0 ? candidates : hand;
+
+  const nonJokers = pool.filter((c) => !c.isJoker);
+  const validPool = nonJokers.length > 0 ? nonJokers : pool;
+
+  const seen =
+    difficulty === 'detente'
+      ? buildSeenCounts(hand, [], [])
+      : buildSeenCounts(hand, [], discardPile);
+  const unseen = (rank: Rank, suit: Suit) =>
+    Math.max(0, 2 - seen[SUIT_INDEX[suit] * 13 + RANK_TO_LOW_VAL[rank] - 1]);
+
+  let worstCard = validPool[0];
+  let bestUtility = -Infinity;
+
+  for (const card of validPool) {
+    const remaining = hand.filter((c) => c.id !== card.id);
+    const covAfter = findBestCoverageMelds(remaining, playerIndex).usedCardIds.size;
+
+    let utility = covAfter * 120 - keepValue(card, hand, unseen);
     if (difficulty === 'detente') {
       utility += (Math.random() - 0.5) * 14;
     }

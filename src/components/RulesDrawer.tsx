@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { GameMode } from '../game/types';
 
 interface RulesDrawerProps {
   open: boolean;
+  mode?: GameMode;
   onClose: () => void;
 }
 
@@ -14,7 +16,13 @@ const VALUE_ROWS = [
   { card: 'Joker', meldPts: 'Valeur de la carte remplacée', handPenalty: '25 pts' },
 ];
 
-export function RulesDrawer({ open, onClose }: RulesDrawerProps) {
+export function RulesDrawer({ open, mode = 'rami72', onClose }: RulesDrawerProps) {
+  const [tab, setTab] = useState<GameMode>(mode);
+
+  useEffect(() => {
+    setTab(mode);
+  }, [mode, open]);
+
   if (!open) return null;
 
   return (
@@ -22,7 +30,7 @@ export function RulesDrawer({ open, onClose }: RulesDrawerProps) {
       className="fixed inset-0 z-50 flex justify-end bg-[#040B08]/75 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
-      aria-label="Règles du Rami 72"
+      aria-label={tab === 'simple' ? 'Règles du Rami Simple' : 'Règles du Rami 72'}
       onClick={onClose}
     >
       <div
@@ -30,9 +38,43 @@ export function RulesDrawer({ open, onClose }: RulesDrawerProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-          <h2 className="font-display text-xl font-semibold text-[#FDFBF7]">
-            Règles du Rami 72
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="font-display text-xl font-semibold text-[#FDFBF7]">
+              Règles du jeu
+            </h2>
+            <div
+              role="tablist"
+              aria-label="Règles par mode"
+              className="inline-flex rounded-lg border border-white/10 bg-white/[0.04] p-0.5 text-xs"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'rami72'}
+                onClick={() => setTab('rami72')}
+                className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                  tab === 'rami72'
+                    ? 'bg-[#173A2A] text-[#E5C158]'
+                    : 'text-[#A6B7AF] hover:text-white'
+                }`}
+              >
+                Rami 72
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'simple'}
+                onClick={() => setTab('simple')}
+                className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                  tab === 'simple'
+                    ? 'bg-[#173A2A] text-[#E5C158]'
+                    : 'text-[#A6B7AF] hover:text-white'
+                }`}
+              >
+                Simple
+              </button>
+            </div>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -44,118 +86,196 @@ export function RulesDrawer({ open, onClose }: RulesDrawerProps) {
         </div>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5 text-sm leading-relaxed text-[#D4DDD9]">
-          <section className="space-y-2">
-            <h3 className="font-display text-base font-semibold text-[#E5C158]">
-              01. Distribution et règle du 72
-            </h3>
-            <p className="text-[#C8D4CE]">
-              Chaque joueur reçoit <strong className="text-white">14 cartes</strong> en main
-              et la <strong className="text-white">15e carte</strong> est posée face visible
-              au tapis pour ouvrir la manche (double jeu de 108 cartes avec 4 Jokers). Pour
-              étaler ses cartes la première fois :
-            </p>
-            <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
-              <li>
-                L&rsquo;<strong className="text-white">ouverture</strong> doit obligatoirement
-                contenir au moins{' '}
-                <strong className="text-[#E5C158]">1 trio/carré sans Joker</strong>,{' '}
-                <strong className="text-[#E5C158]">1 suite sans Joker</strong> et totaliser
-                au moins{' '}
-                <strong className="font-mono text-[#E5C158]">
-                  72 points sans Joker
-                </strong>
-                .
-              </li>
-              <li>
-                Au-delà de ces{' '}
-                <strong className="text-white">72 points sans Joker</strong>, vous pouvez
-                ajouter d&rsquo;autres combinaisons contenant un{' '}
-                <strong className="text-white">Joker</strong> lors de l&rsquo;ouverture (ou
-                ensuite une fois ouvert).
-              </li>
-              <li>
-                Chaque <strong className="text-white">adversaire qui ouvre ensuite</strong>{' '}
-                doit respecter ces mêmes conditions sans Joker et poser{' '}
-                <strong className="text-[#E5C158]">strictement plus</strong> que la dernière
-                ouverture (ex. si Youssef ouvre à 76 pts, il faut au moins 77 pts au total).
-              </li>
-            </ul>
-          </section>
+          {tab === 'simple' ? (
+            <>
+              <section className="space-y-2">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  01. Distribution : 13 cartes &amp; 14e au tapis
+                </h3>
+                <p className="text-[#C8D4CE]">
+                  Chaque joueur reçoit <strong className="text-white">13 cartes</strong> en
+                  main et la <strong className="text-white">14e carte</strong> est posée
+                  face visible sur le tapis (double jeu de 108 cartes avec 4 Jokers).
+                </p>
+              </section>
 
-          <section className="space-y-2 border-t border-white/10 pt-5">
-            <h3 className="font-display text-base font-semibold text-[#E5C158]">
-              02. Combinaisons autorisées
-            </h3>
-            <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
-              <li>
-                <strong className="text-white">Suite :</strong> au moins 3 cartes qui se
-                suivent dans la <strong className="text-white">même couleur</strong> (ex.
-                5♥ 6♥ 7♥ ou D♠ R♠ A♠).
-              </li>
-              <li>
-                <strong className="text-white">Trio ou Carré :</strong> 3 ou 4 cartes de{' '}
-                <strong className="text-white">même valeur</strong> et de{' '}
-                <strong className="text-white">couleurs différentes</strong> (ex. 9♠ 9♥ 9♦).
-              </li>
-              <li>
-                Les <strong className="text-white">Jokers</strong> remplacent n’importe
-                quelle carte manquante (au moins 2 cartes réelles par combinaison).
-              </li>
-            </ul>
-          </section>
+              <section className="space-y-2 border-t border-white/10 pt-5">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  02. Pioche libre (tapis ou caché)
+                </h3>
+                <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
+                  <li>
+                    À chaque tour, vous pouvez piocher soit la{' '}
+                    <strong className="text-white">dernière carte jetée sur le tapis</strong>
+                    , soit une <strong className="text-white">carte cachée</strong> dans la
+                    pioche.
+                  </li>
+                  <li>
+                    Si vous prenez la carte du tapis, vous ne pouvez pas rejeter exactement
+                    cette même carte immédiatement durant le même tour.
+                  </li>
+                </ul>
+              </section>
 
-          <section className="space-y-2 border-t border-white/10 pt-5">
-            <h3 className="font-display text-base font-semibold text-[#E5C158]">
-              03. Déroulement d’un tour et victoire
-            </h3>
-            <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
-              <li>
-                <strong className="text-white">1. Piocher :</strong> seule la{' '}
-                <strong className="text-white">première carte dévoilée</strong> (15e carte
-                au tapis en début de manche) peut être prise ; ensuite, tous les joueurs
-                piochent uniquement les <strong className="text-white">cartes cachées</strong>.
-              </li>
-              <li>
-                <strong className="text-white">2. Poser / Compléter :</strong> préparez vos
-                combinaisons pour atteindre le seuil, ou une fois ouvert, posez librement,
-                complétez n’importe quelle combinaison du tapis ou récupérez un Joker en le
-                remplaçant par la carte exacte.
-              </li>
-              <li>
-                <strong className="text-white">3. Défausser :</strong> terminez votre tour
-                en défaussant une carte. Le premier joueur à vider entièrement sa main gagne
-                la manche !
-              </li>
-            </ul>
-          </section>
+              <section className="space-y-2 border-t border-white/10 pt-5">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  03. Suites et Trios
+                </h3>
+                <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
+                  <li>
+                    <strong className="text-white">Suite :</strong> au moins 3 cartes qui
+                    se suivent dans la <strong className="text-white">même couleur</strong>{' '}
+                    (ex. 5♥ 6♥ 7♥ ou D♠ R♠ A♠).
+                  </li>
+                  <li>
+                    <strong className="text-white">Trio ou Carré :</strong> 3 ou 4 cartes
+                    de <strong className="text-white">même valeur</strong> et de{' '}
+                    <strong className="text-white">couleurs différentes</strong> (ex. 9♠
+                    9♥ 9♦).
+                  </li>
+                  <li>
+                    Les <strong className="text-white">Jokers</strong> remplacent n’importe
+                    quelle carte manquante (au moins 2 cartes réelles par combinaison).
+                  </li>
+                </ul>
+              </section>
 
-          <section className="space-y-3 border-t border-white/10 pt-5">
-            <h3 className="font-display text-base font-semibold text-[#E5C158]">
-              04. Valeur des cartes
-            </h3>
-            <div className="overflow-hidden rounded-lg border border-white/10">
-              <table className="w-full text-left text-xs">
-                <thead className="border-b border-white/10 bg-white/[0.04] text-[#A8B8B1]">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Carte</th>
-                    <th className="px-3 py-2 font-medium text-[#E5C158]">En pose</th>
-                    <th className="px-3 py-2 text-right font-medium">En main</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {VALUE_ROWS.map((row) => (
-                    <tr key={row.card}>
-                      <td className="px-3 py-2 font-medium text-[#F5F2EB]">{row.card}</td>
-                      <td className="px-3 py-2 text-[#D4DDD9]">{row.meldPts}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums text-[#C1CEC8]">
-                        {row.handPenalty}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+              <section className="space-y-2 border-t border-white/10 pt-5">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  04. Sans comptage : étaler pour gagner
+                </h3>
+                <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
+                  <li>
+                    <strong className="text-white">Pas de comptage de points</strong> ni de
+                    seuil à 72.
+                  </li>
+                  <li>
+                    On garde ses combinaisons en main durant la manche. Dès que{' '}
+                    <strong className="text-white">toute votre main est combinée</strong>{' '}
+                    (13 cartes combinées + 1 carte défaussée, ou les 14 cartes combinées),
+                    cliquez sur{' '}
+                    <strong className="text-[#E5C158]">« Étaler &amp; Gagner ! »</strong>{' '}
+                    pour remporter la manche !
+                  </li>
+                </ul>
+              </section>
+            </>
+          ) : (
+            <>
+              <section className="space-y-2">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  01. Distribution et règle du 72
+                </h3>
+                <p className="text-[#C8D4CE]">
+                  Chaque joueur reçoit <strong className="text-white">14 cartes</strong> en main
+                  et la <strong className="text-white">15e carte</strong> est posée face visible
+                  au tapis pour ouvrir la manche (double jeu de 108 cartes avec 4 Jokers). Pour
+                  étaler ses cartes la première fois :
+                </p>
+                <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
+                  <li>
+                    L&rsquo;<strong className="text-white">ouverture</strong> doit obligatoirement
+                    contenir au moins{' '}
+                    <strong className="text-[#E5C158]">1 trio/carré sans Joker</strong>,{' '}
+                    <strong className="text-[#E5C158]">1 suite sans Joker</strong> et totaliser
+                    au moins{' '}
+                    <strong className="font-mono text-[#E5C158]">
+                      72 points sans Joker
+                    </strong>
+                    .
+                  </li>
+                  <li>
+                    Au-delà de ces{' '}
+                    <strong className="text-white">72 points sans Joker</strong>, vous pouvez
+                    ajouter d&rsquo;autres combinaisons contenant un{' '}
+                    <strong className="text-white">Joker</strong> lors de l&rsquo;ouverture (ou
+                    ensuite une fois ouvert).
+                  </li>
+                  <li>
+                    Chaque <strong className="text-white">adversaire qui ouvre ensuite</strong>{' '}
+                    doit respecter ces mêmes conditions sans Joker et poser{' '}
+                    <strong className="text-[#E5C158]">strictement plus</strong> que la dernière
+                    ouverture (ex. si Youssef ouvre à 76 pts, il faut au moins 77 pts au total).
+                  </li>
+                </ul>
+              </section>
+
+              <section className="space-y-2 border-t border-white/10 pt-5">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  02. Combinaisons autorisées
+                </h3>
+                <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
+                  <li>
+                    <strong className="text-white">Suite :</strong> au moins 3 cartes qui se
+                    suivent dans la <strong className="text-white">même couleur</strong> (ex.
+                    5♥ 6♥ 7♥ ou D♠ R♠ A♠).
+                  </li>
+                  <li>
+                    <strong className="text-white">Trio ou Carré :</strong> 3 ou 4 cartes de{' '}
+                    <strong className="text-white">même valeur</strong> et de{' '}
+                    <strong className="text-white">couleurs différentes</strong> (ex. 9♠ 9♥ 9♦).
+                  </li>
+                  <li>
+                    Les <strong className="text-white">Jokers</strong> remplacent n’importe
+                    quelle carte manquante (au moins 2 cartes réelles par combinaison).
+                  </li>
+                </ul>
+              </section>
+
+              <section className="space-y-2 border-t border-white/10 pt-5">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  03. Déroulement d’un tour et victoire
+                </h3>
+                <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
+                  <li>
+                    <strong className="text-white">1. Piocher :</strong> seule la{' '}
+                    <strong className="text-white">première carte dévoilée</strong> (15e carte
+                    au tapis en début de manche) peut être prise ; ensuite, tous les joueurs
+                    piochent uniquement les <strong className="text-white">cartes cachées</strong>.
+                  </li>
+                  <li>
+                    <strong className="text-white">2. Poser / Compléter :</strong> préparez vos
+                    combinaisons pour atteindre le seuil, ou une fois ouvert, posez librement,
+                    complétez n’importe quelle combinaison du tapis ou récupérez un Joker en le
+                    remplaçant par la carte exacte.
+                  </li>
+                  <li>
+                    <strong className="text-white">3. Défausser :</strong> terminez votre tour
+                    en défaussant une carte. Le premier joueur à vider entièrement sa main gagne
+                    la manche !
+                  </li>
+                </ul>
+              </section>
+
+              <section className="space-y-3 border-t border-white/10 pt-5">
+                <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                  04. Valeur des cartes
+                </h3>
+                <div className="overflow-hidden rounded-lg border border-white/10">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-white/10 bg-white/[0.04] text-[#A8B8B1]">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Carte</th>
+                        <th className="px-3 py-2 font-medium text-[#E5C158]">En pose</th>
+                        <th className="px-3 py-2 text-right font-medium">En main</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {VALUE_ROWS.map((row) => (
+                        <tr key={row.card}>
+                          <td className="px-3 py-2 font-medium text-[#F5F2EB]">{row.card}</td>
+                          <td className="px-3 py-2 text-[#D4DDD9]">{row.meldPts}</td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums text-[#C1CEC8]">
+                            {row.handPenalty}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </>
+          )}
         </div>
       </div>
     </div>

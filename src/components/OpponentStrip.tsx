@@ -10,6 +10,7 @@ interface OpponentStripProps {
   hasOpened: boolean[];
   openedWith: (number | null)[];
   speech: Record<number, string>;
+  isSimple?: boolean;
 }
 
 export function OpponentStrip({
@@ -20,6 +21,7 @@ export function OpponentStrip({
   hasOpened,
   openedWith,
   speech,
+  isSimple = false,
 }: OpponentStripProps) {
   return (
     <section
@@ -64,7 +66,9 @@ export function OpponentStrip({
 
             <div className="mt-1.5 flex items-center justify-between gap-2">
               <div className="min-w-0 text-[11px] text-[#9FB3AA]">
-                {oppOpened ? (
+                {isSimple ? (
+                  <span>Combinaisons en main</span>
+                ) : oppOpened ? (
                   <span className="text-[#D4AF37]">
                     Ouvert ({oppOpenPts} pts)
                   </span>

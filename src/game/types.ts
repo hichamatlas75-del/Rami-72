@@ -29,6 +29,8 @@ export type TotalRounds = 1 | 3 | 5;
 
 export type Difficulty = 'detente' | 'salon' | 'maitre';
 
+export type GameMode = 'rami72' | 'simple';
+
 export type SortMode = 'suit' | 'rank' | 'manual';
 
 export type GamePhase =

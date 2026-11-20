@@ -4,6 +4,7 @@ import { PlayerConfig, TableMeld } from '../game/types';
 import { PlayingCard } from './PlayingCard';
 
 interface TableMeldsCanvasProps {
+  isSimple?: boolean;
   tableMelds: TableMeld[];
   players: PlayerConfig[];
   humanOpened: boolean;
@@ -14,6 +15,7 @@ interface TableMeldsCanvasProps {
 }
 
 export function TableMeldsCanvas({
+  isSimple = false,
   tableMelds,
   players,
   humanOpened,
@@ -31,12 +33,13 @@ export function TableMeldsCanvas({
         <span className="font-medium text-[#E4ECE8]">
           Tapis des combinaisons ({tableMelds.length})
         </span>
-        {humanOpened && extendableMeldIds.size > 0 && (
+        {!isSimple && humanOpened && extendableMeldIds.size > 0 && (
           <span className="font-medium text-[#E5C158]">
             Cliquez sur une combinaison dorée pour compléter
           </span>
         )}
-        {humanOpened &&
+        {!isSimple &&
+          humanOpened &&
           extendableMeldIds.size === 0 &&
           swappableMeldIds.size > 0 && (
             <span className="font-medium text-[#E5C158]">
@@ -48,11 +51,14 @@ export function TableMeldsCanvas({
       {tableMelds.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/12 px-6 py-6 text-center">
           <p className="font-display text-lg text-[#E4ECE8]">
-            Le tapis attend la première ouverture à 72 points
+            {isSimple
+              ? 'Gardez vos combinaisons en main jusqu’à la victoire'
+              : 'Le tapis attend la première ouverture à 72 points'}
           </p>
           <p className="mt-1 max-w-md text-xs leading-relaxed text-[#9BB0A7]">
-            Préparez vos suites (même couleur) et vos trios ou carrés (couleurs
-            différentes) jusqu’à atteindre au moins 72 points pour étaler.
+            {isSimple
+              ? 'Formez vos suites (même couleur) et vos trios ou carrés (couleurs différentes) avec vos 13 cartes : le premier qui combine toute sa main étale sur le tapis et gagne.'
+              : 'Préparez vos suites (même couleur) et vos trios ou carrés (couleurs différentes) jusqu’à atteindre au moins 72 points pour étaler.'}
           </p>
         </div>
       ) : (
@@ -64,6 +70,12 @@ export function TableMeldsCanvas({
               const isTarget = canExtend || canSwap;
               const isRevealedWin = revealMeldIds?.has(meld.id) ?? false;
               const ownerName = players[meld.ownerIndex]?.name ?? '';
+              const meldLabel =
+                meld.type === 'run'
+                  ? 'Suite'
+                  : meld.slots.length >= 4
+                  ? 'Carré'
+                  : 'Trio';
 
               return (
                 <motion.div
@@ -88,9 +100,13 @@ export function TableMeldsCanvas({
                     <div className="mb-1.5 flex w-full items-center justify-between gap-2 text-[11px]">
                       <span className="text-[#B8C7C0]">
                         {ownerName} ·{' '}
-                        <span className="font-mono tabular-nums text-[#E5C158]">
-                          {meld.points} pts
-                        </span>
+                        {isSimple ? (
+                          <span className="text-[#E5C158]">{meldLabel}</span>
+                        ) : (
+                          <span className="font-mono tabular-nums text-[#E5C158]">
+                            {meld.points} pts
+                          </span>
+                        )}
                       </span>
                       {canSwap ? (
                         <span className="font-semibold text-[#E5C158]">

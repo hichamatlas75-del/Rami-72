@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   DIFFICULTY_META,
   Difficulty,
+  GameMode,
   PlayerCount,
   TotalRounds,
 } from '../game/types';
@@ -9,9 +10,11 @@ import { SuitIcon } from './PlayingCard';
 import heroCardsImage from '../assets/images/rami_hero_cards.jpg';
 
 interface TitleScreenProps {
+  gameMode: GameMode;
   playerCount: PlayerCount;
   totalRounds: TotalRounds;
   difficulty: Difficulty;
+  onChangeGameMode: (mode: GameMode) => void;
   onChangePlayerCount: (n: PlayerCount) => void;
   onChangeTotalRounds: (r: TotalRounds) => void;
   onChangeDifficulty: (d: Difficulty) => void;
@@ -37,31 +40,69 @@ const BAREME_ROWS = [
 ];
 
 export function TitleScreen({
+  gameMode,
   playerCount,
   totalRounds,
   difficulty,
+  onChangeGameMode,
   onChangePlayerCount,
   onChangeTotalRounds,
   onChangeDifficulty,
   onStartGame,
 }: TitleScreenProps) {
   const [heroFailed, setHeroFailed] = useState(false);
+  const isSimple = gameMode === 'simple';
 
   return (
     <div className="min-h-screen bg-[#081510] text-[#F5F2EB]">
       {/* Strict 3-zone Top Bar Contract */}
       <header className="border-b border-white/10 bg-[#081510]/95">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-8 px-6 py-4">
-          <a
-            href="#top"
-            className="font-display text-xl font-semibold tracking-tight text-[#FDFBF7] whitespace-nowrap shrink-0"
-          >
-            Rami 72
-          </a>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:gap-8 sm:px-6 sm:py-4">
+          <div className="flex items-center gap-3 sm:gap-5 shrink-0">
+            <a
+              href="#top"
+              className="font-display text-xl font-semibold tracking-tight text-[#FDFBF7] whitespace-nowrap shrink-0"
+            >
+              Rami
+            </a>
+
+            <div
+              role="tablist"
+              aria-label="Choisir le jeu de cartes"
+              className="inline-flex items-center gap-1 rounded-xl border border-white/12 bg-white/[0.04] p-1"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!isSimple}
+                onClick={() => onChangeGameMode('rami72')}
+                className={`min-h-[34px] rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] sm:text-sm ${
+                  !isSimple
+                    ? 'bg-[#173A2A] text-[#E5C158] ring-1 ring-[#D4AF37]/60'
+                    : 'text-[#A6B7AF] hover:bg-white/[0.05] hover:text-white'
+                }`}
+              >
+                Rami 72
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isSimple}
+                onClick={() => onChangeGameMode('simple')}
+                className={`min-h-[34px] rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] sm:text-sm ${
+                  isSimple
+                    ? 'bg-[#173A2A] text-[#E5C158] ring-1 ring-[#D4AF37]/60'
+                    : 'text-[#A6B7AF] hover:bg-white/[0.05] hover:text-white'
+                }`}
+              >
+                Simple
+              </button>
+            </div>
+          </div>
 
           <nav
             aria-label="Navigation principale"
-            className="hidden items-center gap-7 text-sm font-medium text-[#B8C7C0] md:flex"
+            className="hidden items-center gap-7 text-sm font-medium text-[#B8C7C0] lg:flex"
           >
             <a
               href="#table"
@@ -73,7 +114,7 @@ export function TitleScreen({
               href="#regles"
               className="whitespace-nowrap shrink-0 transition-colors hover:text-[#FDFBF7]"
             >
-              La règle du 72
+              {isSimple ? 'Règle Simple' : 'La règle du 72'}
             </a>
             <a
               href="#combinaisons"
@@ -85,7 +126,7 @@ export function TitleScreen({
               href="#bareme"
               className="whitespace-nowrap shrink-0 transition-colors hover:text-[#FDFBF7]"
             >
-              Barème
+              {isSimple ? 'Sans comptage' : 'Barème'}
             </a>
           </nav>
 
@@ -93,7 +134,7 @@ export function TitleScreen({
             <button
               type="button"
               onClick={onStartGame}
-              className="min-h-[40px] rounded-lg bg-[#D4AF37] px-4 py-2 text-sm font-semibold text-[#091611] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FDFBF7]"
+              className="min-h-[40px] rounded-lg bg-[#D4AF37] px-3.5 py-2 text-xs font-semibold text-[#091611] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FDFBF7] sm:px-4 sm:text-sm"
             >
               Nouvelle partie
             </button>
@@ -111,17 +152,21 @@ export function TitleScreen({
           <div className="flex flex-col justify-between lg:col-span-6">
             <div>
               <p className="text-xs font-medium text-[#D4AF37]">
-                Rami marocain · 2 à 4 joueurs · Ouverture à 72 points et surenchère
+                {isSimple
+                  ? 'Rami simple · 2 à 4 joueurs · Sans comptage · Pioche tapis ou caché'
+                  : 'Rami marocain · 2 à 4 joueurs · Ouverture à 72 points et surenchère'}
               </p>
 
               <h1 className="mt-3 max-w-xl font-display text-4xl font-semibold leading-[1.08] tracking-tight text-[#FDFBF7] sm:text-5xl">
-                Le 72, la règle du tapis marocain.
+                {isSimple
+                  ? 'Rami Simple, pur jeu de combinaisons.'
+                  : 'Le 72, la règle du tapis marocain.'}
               </h1>
 
               <p className="mt-4 max-w-lg text-base leading-relaxed text-[#BAC8C2]">
-                Formez des suites de même couleur et des trios de couleurs différentes.
-                Réunissez 72 points pour étaler le premier : chaque adversaire devra
-                ensuite dépasser votre total pour ouvrir à son tour.
+                {isSimple
+                  ? '13 cartes par joueur et la 14e carte sur le tapis. Piochez librement la dernière carte jetée ou une carte cachée, formez suites et trios en main : le premier à finir toutes ses combinaisons gagne !'
+                  : 'Formez des suites de même couleur et des trios de couleurs différentes. Réunissez 72 points sans Joker pour étaler le premier : chaque adversaire devra ensuite dépasser votre total pour ouvrir à son tour.'}
               </p>
             </div>
 
@@ -233,7 +278,9 @@ export function TitleScreen({
                   Distribuer les cartes
                 </button>
                 <span className="text-xs text-[#9BB0A7]">
-                  14 cartes par main · 15e carte au tapis · 108 cartes avec Jokers
+                  {isSimple
+                    ? '13 cartes par main · 14e carte au tapis · 108 cartes avec Jokers'
+                    : '14 cartes par main · 15e carte au tapis · 108 cartes avec Jokers'}
                 </span>
               </div>
             </div>
@@ -257,18 +304,30 @@ export function TitleScreen({
                   <SuitIcon suit="clubs" className="h-9 w-9" />
                   <SuitIcon suit="diamonds" className="h-9 w-9 text-[#DC2626]" />
                 </div>
-                <p className="mt-4 font-display text-xl text-[#FDFBF7]">Rami 72</p>
+                <p className="mt-4 font-display text-xl text-[#FDFBF7]">
+                  {isSimple ? 'Rami Simple' : 'Rami 72'}
+                </p>
               </div>
             )}
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#050E0A]/90 via-[#050E0A]/45 to-transparent px-6 pb-5 pt-16">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-[#E4ECE8]">
-                <span>Seuil initial 72 pts</span>
-                <span aria-hidden="true">·</span>
-                <span>Surenchère obligatoire à chaque ouverture</span>
-                <span aria-hidden="true">·</span>
-                <span>Complétion &amp; échange de Jokers</span>
-              </div>
+              {isSimple ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#E4ECE8]">
+                  <span>Sans comptage de points</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Pioche tapis ou caché</span>
+                  <span aria-hidden="true">·</span>
+                  <span>13 cartes en main</span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#E4ECE8]">
+                  <span>Seuil initial 72 pts</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Surenchère obligatoire à chaque ouverture</span>
+                  <span aria-hidden="true">·</span>
+                  <span>Complétion &amp; échange de Jokers</span>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -281,97 +340,177 @@ export function TitleScreen({
           <div id="combinaisons" className="space-y-6 lg:col-span-7">
             <div>
               <h2 className="font-display text-2xl font-semibold text-[#FDFBF7]">
-                Comment fonctionne le 72
+                {isSimple
+                  ? 'Comment fonctionne le mode Simple'
+                  : 'Comment fonctionne le 72'}
               </h2>
               <p className="mt-2 text-sm text-[#A6B7AF]">
-                Une tension stratégique unique : plus vous attendez pour étaler après un
-                adversaire, plus la barre à franchir monte.
+                {isSimple
+                  ? 'Un jeu rapide et direct : aucun calcul de points, seule la maîtrise de vos combinaisons compte.'
+                  : 'Une tension stratégique unique : plus vous attendez pour étaler après un adversaire, plus la barre à franchir monte.'}
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div className="space-y-1.5 border-t border-white/10 pt-4">
-                <h3 className="font-display text-base font-semibold text-[#E5C158]">
-                  01. Suites de même couleur
-                </h3>
-                <p className="text-sm leading-relaxed text-[#BAC8C2]">
-                  Alignez au moins 3 numéros consécutifs dans la même couleur (ex. 6♥ 7♥ 8♥
-                  ou V♠ D♠ R♠ A♠). Les Jokers peuvent combler un trou.
-                </p>
-              </div>
+            {isSimple ? (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    01. Distribution à 13 cartes
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    Chaque joueur reçoit 13 cartes en main, et la 14e carte est retournée face
+                    visible sur le tapis pour démarrer la manche.
+                  </p>
+                </div>
 
-              <div className="space-y-1.5 border-t border-white/10 pt-4">
-                <h3 className="font-display text-base font-semibold text-[#E5C158]">
-                  02. Trios et carrés
-                </h3>
-                <p className="text-sm leading-relaxed text-[#BAC8C2]">
-                  Réunissez 3 ou 4 cartes de même valeur mais de couleurs différentes (ex.
-                  10♠ 10♥ 10♦), sans jamais répéter deux fois la même couleur.
-                </p>
-              </div>
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    02. Pioche libre (tapis ou caché)
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    À chaque tour, prenez au choix la dernière carte jetée sur le tapis ou une
+                    carte cachée de la pioche, puis terminez en jetant 1 carte.
+                  </p>
+                </div>
 
-              <div className="space-y-1.5 border-t border-white/10 pt-4">
-                <h3 className="font-display text-base font-semibold text-[#E5C158]">
-                  03. Ouverture à 72 sans Joker puis surenchère
-                </h3>
-                <p className="text-sm leading-relaxed text-[#BAC8C2]">
-                  L&rsquo;ouverture exige au moins 1 trio/carré sans Joker, 1 suite sans
-                  Joker et 72 points sans Joker (les Jokers restent permis au-delà de 72
-                  points). S&rsquo;il pose 78 points, le suivant doit atteindre au moins 79
-                  points.
-                </p>
-              </div>
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    03. Suites et Trios en main
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    Formez des suites de même couleur (ex. 6♥ 7♥ 8♥) et des trios ou carrés de
+                    couleurs différentes (ex. 10♠ 10♥ 10♦), avec ou sans Joker.
+                  </p>
+                </div>
 
-              <div className="space-y-1.5 border-t border-white/10 pt-4">
-                <h3 className="font-display text-base font-semibold text-[#E5C158]">
-                  04. Pioche cachée &amp; complétion
-                </h3>
-                <p className="text-sm leading-relaxed text-[#BAC8C2]">
-                  Seule la 15e carte dévoilée au début peut être prise sur le tapis ; ensuite,
-                  tout le monde pioche caché. Une fois ouvert, complétez le tapis et videz
-                  votre main pour gagner !
-                </p>
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    04. Finir toutes ses combinaisons
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    On garde tout en main jusqu’à la fin : dès que vos 13 cartes (ou 14) sont
+                    combinées, étalez toute votre main sur le tapis pour gagner !
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    01. Suites de même couleur
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    Alignez au moins 3 numéros consécutifs dans la même couleur (ex. 6♥ 7♥ 8♥
+                    ou V♠ D♠ R♠ A♠). Les Jokers peuvent combler un trou.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    02. Trios et carrés
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    Réunissez 3 ou 4 cartes de même valeur mais de couleurs différentes (ex.
+                    10♠ 10♥ 10♦), sans jamais répéter deux fois la même couleur.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    03. Ouverture à 72 sans Joker puis surenchère
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    L&rsquo;ouverture exige au moins 1 trio/carré sans Joker, 1 suite sans
+                    Joker et 72 points sans Joker (les Jokers restent permis au-delà de 72
+                    points). S&rsquo;il pose 78 points, le suivant doit atteindre au moins 79
+                    points.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5 border-t border-white/10 pt-4">
+                  <h3 className="font-display text-base font-semibold text-[#E5C158]">
+                    04. Pioche cachée &amp; complétion
+                  </h3>
+                  <p className="text-sm leading-relaxed text-[#BAC8C2]">
+                    Seule la 15e carte dévoilée au début peut être prise sur le tapis ; ensuite,
+                    tout le monde pioche caché. Une fois ouvert, complétez le tapis et videz
+                    votre main pour gagner !
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div id="bareme" className="lg:col-span-5">
-            <h2 className="font-display text-2xl font-semibold text-[#FDFBF7]">
-              Barème des points
-            </h2>
-            <p className="mt-2 text-sm text-[#A6B7AF]">
-              Points comptés lors de l’ouverture sur le tapis et pénalités des cartes
-              restantes en fin de manche.
-            </p>
+            {isSimple ? (
+              <>
+                <h2 className="font-display text-2xl font-semibold text-[#FDFBF7]">
+                  Pas de comptage
+                </h2>
+                <p className="mt-2 text-sm text-[#A6B7AF]">
+                  En mode Simple, aucune valeur numérique n’est additionnée pendant ni après la
+                  manche.
+                </p>
 
-            <div className="mt-5 overflow-hidden rounded-xl border border-white/10 bg-[#0C1D16]">
-              <table className="w-full text-sm">
-                <thead className="border-b border-white/10 bg-white/[0.03] text-xs text-[#9DB0A7]">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium">Carte</th>
-                    <th className="px-3 py-3 text-right font-medium text-[#E5C158]">
-                      En pose
-                    </th>
-                    <th className="px-4 py-3 text-right font-medium">Pénalité</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 font-mono tabular-nums">
-                  {BAREME_ROWS.map((row) => (
-                    <tr key={row.name}>
-                      <td className="px-4 py-2.5 font-sans font-medium text-[#F5F2EB]">
-                        {row.name}
-                      </td>
-                      <td className="px-3 py-2.5 text-right text-xs text-[#E5C158]">
-                        {row.meld}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-xs text-[#C8D4CE]">
-                        {row.hand}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                <div className="mt-5 space-y-3 rounded-xl border border-white/10 bg-[#0C1D16] p-5 text-sm text-[#C8D4CE]">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                    <span>Seuil minimum d’ouverture</span>
+                    <strong className="font-mono text-[#E5C158]">Aucun</strong>
+                  </div>
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                    <span>Pénalité des cartes restantes</span>
+                    <strong className="font-mono text-[#E5C158]">Aucune (0 pt)</strong>
+                  </div>
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                    <span>Pioche de la carte jetée</span>
+                    <strong className="font-mono text-[#6EE7B7]">À chaque tour</strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Classement sur plusieurs manches</span>
+                    <strong className="font-mono text-[#FDFBF7]">Nombre de victoires</strong>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="font-display text-2xl font-semibold text-[#FDFBF7]">
+                  Barème des points
+                </h2>
+                <p className="mt-2 text-sm text-[#A6B7AF]">
+                  Points comptés lors de l’ouverture sur le tapis et pénalités des cartes
+                  restantes en fin de manche.
+                </p>
+
+                <div className="mt-5 overflow-hidden rounded-xl border border-white/10 bg-[#0C1D16]">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-white/10 bg-white/[0.03] text-xs text-[#9DB0A7]">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium">Carte</th>
+                        <th className="px-3 py-3 text-right font-medium text-[#E5C158]">
+                          En pose
+                        </th>
+                        <th className="px-4 py-3 text-right font-medium">Pénalité</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono tabular-nums">
+                      {BAREME_ROWS.map((row) => (
+                        <tr key={row.name}>
+                          <td className="px-4 py-2.5 font-sans font-medium text-[#F5F2EB]">
+                            {row.name}
+                          </td>
+                          <td className="px-3 py-2.5 text-right text-xs text-[#E5C158]">
+                            {row.meld}
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-xs text-[#C8D4CE]">
+                            {row.hand}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         </section>
       </main>

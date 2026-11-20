@@ -4,6 +4,7 @@ import { formatCardShort } from '../game/useRami72Game';
 import { CardBack, PlayingCard } from './PlayingCard';
 
 interface StockAndThresholdPanelProps {
+  isSimple?: boolean;
   humanOpened: boolean;
   humanOpenedWith: number | null;
   highestOpeningScore: number | null;
@@ -23,6 +24,7 @@ interface StockAndThresholdPanelProps {
 }
 
 export function StockAndThresholdPanel({
+  isSimple = false,
   humanOpened,
   humanOpenedWith,
   highestOpeningScore,
@@ -45,34 +47,48 @@ export function StockAndThresholdPanel({
 
   return (
     <aside
-      aria-label="Pioche, défausse et seuil du 72"
+      aria-label={isSimple ? 'Pioche et défausse du tapis' : 'Pioche, défausse et seuil du 72'}
       className="flex shrink-0 flex-row items-center justify-between gap-3 rounded-2xl border border-[#D4AF37]/20 bg-[#071610]/78 p-3.5 backdrop-blur-xs sm:w-56 sm:flex-col sm:justify-center sm:gap-4 sm:p-4"
     >
-      {/* Live Threshold Plaque */}
+      {/* Live Threshold / Mode Plaque */}
       <div className="min-w-0 text-left sm:w-full sm:border-b sm:border-white/10 sm:pb-3 sm:text-center">
-        <p className="text-[11px] font-medium text-[#A3B6AD]">
-          {humanOpened
-            ? 'Votre statut'
-            : highestOpeningScore === null
-            ? 'Seuil initial'
-            : 'Seuil à dépasser'}
-        </p>
-        {humanOpened ? (
-          <p className="mt-0.5 font-display text-lg font-semibold text-[#E5C158]">
-            Ouvert ({humanOpenedWith} pts)
-          </p>
+        {isSimple ? (
+          <>
+            <p className="text-[11px] font-medium text-[#A3B6AD]">Mode Simple</p>
+            <p className="mt-0.5 font-display text-lg font-semibold text-[#E5C158]">
+              Sans comptage
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-[#B8C7C0]">
+              Pioche tapis ou caché · 13 cartes
+            </p>
+          </>
         ) : (
-          <p className="mt-0.5 font-mono text-2xl font-semibold tabular-nums text-[#E5C158]">
-            {requiredThreshold} pts
-          </p>
+          <>
+            <p className="text-[11px] font-medium text-[#A3B6AD]">
+              {humanOpened
+                ? 'Votre statut'
+                : highestOpeningScore === null
+                ? 'Seuil initial'
+                : 'Seuil à dépasser'}
+            </p>
+            {humanOpened ? (
+              <p className="mt-0.5 font-display text-lg font-semibold text-[#E5C158]">
+                Ouvert ({humanOpenedWith} pts)
+              </p>
+            ) : (
+              <p className="mt-0.5 font-mono text-2xl font-semibold tabular-nums text-[#E5C158]">
+                {requiredThreshold} pts
+              </p>
+            )}
+            <p className="mt-0.5 truncate text-[11px] text-[#B8C7C0]">
+              {humanOpened
+                ? 'Posez et complétez librement'
+                : highestOpeningScore === null
+                ? 'Premier à étaler ≥ 72 pts'
+                : `> ${highestOpeningScore} pts (${players[lastOpenerIndex!]?.name})`}
+            </p>
+          </>
         )}
-        <p className="mt-0.5 truncate text-[11px] text-[#B8C7C0]">
-          {humanOpened
-            ? 'Posez et complétez librement'
-            : highestOpeningScore === null
-            ? 'Premier à étaler ≥ 72 pts'
-            : `> ${highestOpeningScore} pts (${players[lastOpenerIndex!]?.name})`}
-        </p>
       </div>
 
       {/* Pioche & Défausse Interactive Slots */}
@@ -119,7 +135,7 @@ export function StockAndThresholdPanel({
           </span>
         </div>
 
-        {/* Défausse (seule la 15e carte dévoilée du début peut être prise) */}
+        {/* Défausse */}
         <div className="flex flex-col items-center">
           <button
             type="button"
@@ -133,7 +149,9 @@ export function StockAndThresholdPanel({
             disabled={!canDrawDiscard && !canDiscardSelected}
             aria-label={
               canDrawDiscard && topDiscard
-                ? `Prendre la 15e carte dévoilée : ${formatCardShort(topDiscard)}`
+                ? isSimple
+                  ? `Prendre la dernière carte jetée sur le tapis : ${formatCardShort(topDiscard)}`
+                  : `Prendre la 15e carte dévoilée : ${formatCardShort(topDiscard)}`
                 : canDiscardSelected
                 ? 'Défausser la carte sélectionnée'
                 : 'Défausse'
@@ -155,6 +173,10 @@ export function StockAndThresholdPanel({
           <span className="mt-1.5 text-[11px] text-[#D4DDD9] whitespace-nowrap">
             {canDiscardSelected
               ? 'Défausser ici'
+              : canDrawDiscard && topDiscard
+              ? isSimple
+                ? 'Prendre du tapis'
+                : '15e dévoilée'
               : isInitialTapisCard && topDiscard
               ? '15e dévoilée'
               : 'Défausse'}

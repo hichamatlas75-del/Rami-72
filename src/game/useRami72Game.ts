@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   OpeningValidationResult,
   chooseAIDiscard,
+  chooseSimpleAIDiscard,
   computeHandPenalty,
   createDoubleDeck,
   decideAIDrawSource,
+  decideSimpleAIDrawSource,
+  findBestCoverageMelds,
   findBestDisjointMelds,
   findBestOpeningMelds,
+  findSimpleWinSolution,
   planLayoffs,
   sortHand,
   tryExtendTableMeld,
@@ -18,6 +22,7 @@ import { ramiAudio } from './sound';
 import {
   Card,
   Difficulty,
+  GameMode,
   GamePhase,
   PlayerConfig,
   PlayerCount,
@@ -95,6 +100,7 @@ export function formatCardShort(card: Card): string {
 }
 
 function dealNewRound(params: {
+  mode: GameMode;
   roundNumber: number;
   players: PlayerConfig[];
   cumulativePenalty: number[];
@@ -103,6 +109,7 @@ function dealNewRound(params: {
   soundCue?: SoundCue | null;
 }): TableState {
   const {
+    mode,
     roundNumber,
     players,
     cumulativePenalty,
@@ -111,17 +118,18 @@ function dealNewRound(params: {
     soundCue = null,
   } = params;
   const deck = createDoubleDeck();
+  const cardsPerPlayer = mode === 'simple' ? 13 : 14;
   const hands: Card[][] = [];
   let cursor = 0;
 
   for (let i = 0; i < players.length; i++) {
-    const raw = deck.slice(cursor, cursor + 14);
+    const raw = deck.slice(cursor, cursor + cardsPerPlayer);
     hands.push(
       i === 0
         ? sortHand(raw, sortMode === 'manual' ? 'suit' : sortMode)
         : raw
     );
-    cursor += 14;
+    cursor += cardsPerPlayer;
   }
 
   const firstDiscard = deck[cursor];
@@ -142,7 +150,7 @@ function dealNewRound(params: {
     lastOpenerIndex: null,
     activePlayer: startingPlayer,
     turnStep: 'DRAW',
-    isInitialTapisCard: true,
+    isInitialTapisCard: mode !== 'simple',
     drawnFromDiscardId: null,
     lastDrawnCardId: null,
     speech: {},
@@ -183,7 +191,8 @@ function finishRoundState(
   prev: TableState,
   winnerIndex: number,
   finalHands: Card[][],
-  totalRounds: TotalRounds
+  totalRounds: TotalRounds,
+  mode: GameMode
 ): TableState {
   const nextCumulative = [...prev.cumulativePenalty];
   const nextRoundsWon = [...prev.roundsWon];
@@ -191,7 +200,8 @@ function finishRoundState(
 
   const standings: PlayerRoundScore[] = prev.players.map((p, idx) => {
     const isWinner = idx === winnerIndex;
-    const penalty = isWinner ? 0 : computeHandPenalty(finalHands[idx]);
+    const penalty =
+      mode === 'simple' || isWinner ? 0 : computeHandPenalty(finalHands[idx]);
     nextCumulative[idx] += penalty;
 
     return {
@@ -212,7 +222,7 @@ function finishRoundState(
     roundNumber: prev.roundNumber,
     winnerIndex,
     winnerName: prev.players[winnerIndex].name,
-    highestOpeningScore: prev.highestOpeningScore,
+    highestOpeningScore: mode === 'simple' ? null : prev.highestOpeningScore,
     standings,
   };
 
@@ -252,16 +262,20 @@ function refillStockIfEmpty(
 }
 
 export function useRami72Game(params: {
+  mode?: GameMode;
   playerCount: PlayerCount;
   totalRounds: TotalRounds;
   difficulty: Difficulty;
 }) {
   const { playerCount, totalRounds, difficulty } = params;
+  const gameMode: GameMode = params.mode ?? 'rami72';
+  const isSimple = gameMode === 'simple';
 
   const [sortMode, setSortMode] = useState<SortMode>('suit');
   const [state, setState] = useState<TableState>(() => {
     const players = buildPlayersForCount(playerCount);
     return dealNewRound({
+      mode: gameMode,
       roundNumber: 1,
       players,
       cumulativePenalty: players.map(() => 0),
@@ -347,7 +361,9 @@ export function useRami72Game(params: {
       return { melds: [single], totalPoints: single.points };
     }
     if (selectedCards.length >= 6) {
-      const best = findBestDisjointMelds(selectedCards, 0);
+      const best = isSimple
+        ? findBestCoverageMelds(selectedCards, 0)
+        : findBestDisjointMelds(selectedCards, 0);
       if (
         best.melds.length > 0 &&
         best.usedCardIds.size === selectedCards.length
@@ -356,14 +372,28 @@ export function useRami72Game(params: {
       }
     }
     return null;
-  }, [isHumanPlay, selectedCards]);
+  }, [isHumanPlay, selectedCards, isSimple]);
 
   const autoCompleteBundle = useMemo<{
     melds: TableMeld[];
     totalPoints: number;
     remainingCount: number;
+    discardCard?: Card | null;
   } | null>(() => {
-    if (!isHumanPlay || stagedMelds.length > 0 || visibleHumanHand.length < 3) {
+    if (!isHumanPlay) return null;
+    if (isSimple) {
+      if (humanHand.length < 3) return null;
+      const win = findSimpleWinSolution(humanHand, 0, state.drawnFromDiscardId);
+      if (!win.canWin) return null;
+      return {
+        melds: win.melds,
+        totalPoints: 0,
+        remainingCount: win.discardCard ? 1 : 0,
+        discardCard: win.discardCard,
+      };
+    }
+
+    if (stagedMelds.length > 0 || visibleHumanHand.length < 3) {
       return null;
     }
     const best = humanOpened
@@ -379,6 +409,9 @@ export function useRami72Game(params: {
     };
   }, [
     isHumanPlay,
+    isSimple,
+    humanHand,
+    state.drawnFromDiscardId,
     stagedMelds.length,
     visibleHumanHand,
     humanOpened,
@@ -392,18 +425,22 @@ export function useRami72Game(params: {
 
   const extendableMeldIds = useMemo(() => {
     const ids = new Set<string>();
-    if (!isHumanPlay || !humanOpened || selectedCards.length === 0) return ids;
+    if (isSimple || !isHumanPlay || !humanOpened || selectedCards.length === 0) {
+      return ids;
+    }
     for (const meld of state.tableMelds) {
       if (tryExtendTableMeld(meld, selectedCards) !== null) {
         ids.add(meld.id);
       }
     }
     return ids;
-  }, [isHumanPlay, humanOpened, selectedCards, state.tableMelds]);
+  }, [isSimple, isHumanPlay, humanOpened, selectedCards, state.tableMelds]);
 
   const swappableMeldIds = useMemo(() => {
     const ids = new Set<string>();
-    if (!isHumanPlay || !humanOpened || selectedCards.length !== 1) return ids;
+    if (isSimple || !isHumanPlay || !humanOpened || selectedCards.length !== 1) {
+      return ids;
+    }
     const single = selectedCards[0];
     if (single.isJoker) return ids;
     for (const meld of state.tableMelds) {
@@ -412,7 +449,7 @@ export function useRami72Game(params: {
       }
     }
     return ids;
-  }, [isHumanPlay, humanOpened, selectedCards, state.tableMelds]);
+  }, [isSimple, isHumanPlay, humanOpened, selectedCards, state.tableMelds]);
 
   const handleChangeSortMode = useCallback((mode: SortMode) => {
     setSortMode(mode);
@@ -473,7 +510,7 @@ export function useRami72Game(params: {
       if (!isHumanDraw) return;
       setFeedbackMessage(null);
       setSelectedIds(new Set());
-      setStagedMelds([]);
+      if (!isSimple) setStagedMelds([]);
 
       setState((prev) => {
         if (
@@ -485,7 +522,9 @@ export function useRami72Game(params: {
         }
 
         if (source === 'discard') {
-          if (!prev.isInitialTapisCard || prev.discard.length === 0) return prev;
+          if ((!isSimple && !prev.isInitialTapisCard) || prev.discard.length === 0) {
+            return prev;
+          }
           const drawn = prev.discard[prev.discard.length - 1];
           const nextDiscard = prev.discard.slice(0, -1);
           const nextHands = [...prev.hands];
@@ -509,15 +548,17 @@ export function useRami72Game(params: {
         );
         if (nextStock.length === 0) {
           let bestIdx = 0;
-          let bestPen = Infinity;
+          let bestMetric = Infinity;
           prev.hands.forEach((h, i) => {
-            const p = computeHandPenalty(h);
-            if (p < bestPen) {
-              bestPen = p;
+            const metric = isSimple
+              ? h.length - findBestCoverageMelds(h, i).usedCardIds.size
+              : computeHandPenalty(h);
+            if (metric < bestMetric) {
+              bestMetric = metric;
               bestIdx = i;
             }
           });
-          return finishRoundState(prev, bestIdx, prev.hands, totalRounds);
+          return finishRoundState(prev, bestIdx, prev.hands, totalRounds, gameMode);
         }
 
         const drawn = nextStock[nextStock.length - 1];
@@ -537,7 +578,7 @@ export function useRami72Game(params: {
         };
       });
     },
-    [isHumanDraw, sortMode, totalRounds]
+    [isHumanDraw, isSimple, gameMode, sortMode, totalRounds]
   );
 
   const handleStageSelectedMeld = useCallback(() => {
@@ -558,6 +599,67 @@ export function useRami72Game(params: {
     setSelectedIds(new Set());
     setFeedbackMessage(null);
   }, []);
+
+  const handleSimpleWin = useCallback(
+    (meldsToLay: TableMeld[], discardCard: Card | null = null) => {
+      if (!isSimple || !isHumanPlay || meldsToLay.length === 0) return;
+
+      if (
+        discardCard &&
+        state.drawnFromDiscardId === discardCard.id &&
+        state.hands[0].length > 1
+      ) {
+        setFeedbackMessage(
+          'Vous ne pouvez pas défausser immédiatement la carte prise sur le tapis.'
+        );
+        return;
+      }
+
+      const usedIds = new Set<string>();
+      for (const m of meldsToLay) {
+        for (const s of m.slots) usedIds.add(s.card.id);
+      }
+      if (discardCard) usedIds.add(discardCard.id);
+
+      const coversWholeHand = state.hands[0].every((c) => usedIds.has(c.id));
+      if (!coversWholeHand) {
+        setFeedbackMessage(
+          'Toutes vos cartes doivent être combinées (ou 13 combinées + 1 défausse).'
+        );
+        return;
+      }
+
+      setStagedMelds([]);
+      setSelectedIds(new Set());
+      setFeedbackMessage(null);
+
+      setState((prev) => {
+        const nextHands = [...prev.hands];
+        nextHands[0] = [];
+        const nextDiscard = discardCard
+          ? [...prev.discard, discardCard]
+          : prev.discard;
+        const nextTableMelds = [...prev.tableMelds, ...meldsToLay];
+
+        return enterRevealState(
+          {
+            ...prev,
+            hands: nextHands,
+            discard: nextDiscard,
+            tableMelds: nextTableMelds,
+            lastDrawnCardId: null,
+          },
+          0,
+          nextHands,
+          meldsToLay.map((m) => m.id),
+          discardCard
+            ? `Étale toute sa main · Jette ${formatCardShort(discardCard)} !`
+            : 'Étale toute sa main et gagne !'
+        );
+      });
+    },
+    [isSimple, isHumanPlay, state.drawnFromDiscardId, state.hands]
+  );
 
   const handleCommitMelds = useCallback(
     (meldsToCommit: TableMeld[], isOpening: boolean) => {
@@ -722,7 +824,7 @@ export function useRami72Game(params: {
 
   const handleHumanDiscard = useCallback(() => {
     if (!isHumanPlay) return;
-    if (stagedMelds.length > 0) {
+    if (!isSimple && stagedMelds.length > 0) {
       setFeedbackMessage(
         'Étalez votre pose préparée ou cliquez sur « Annuler » avant de défausser.'
       );
@@ -735,6 +837,16 @@ export function useRami72Game(params: {
       setFeedbackMessage(
         'Vous ne pouvez pas défausser immédiatement la carte prise dans la défausse.'
       );
+      return;
+    }
+
+    if (
+      isSimple &&
+      stagedMelds.length > 0 &&
+      visibleHumanHand.length === 1 &&
+      visibleHumanHand[0].id === card.id
+    ) {
+      handleSimpleWin(stagedMelds, card);
       return;
     }
 
@@ -771,7 +883,10 @@ export function useRami72Game(params: {
     });
   }, [
     isHumanPlay,
-    stagedMelds.length,
+    isSimple,
+    stagedMelds,
+    visibleHumanHand,
+    handleSimpleWin,
     selectedCards,
     state.drawnFromDiscardId,
     state.hands,
@@ -802,18 +917,25 @@ export function useRami72Game(params: {
           prev.discard.length > 0 ? prev.discard[prev.discard.length - 1] : null;
         const req = getRequiredThreshold(prev.highestOpeningScore);
 
-        const source = decideAIDrawSource({
-          hand: prev.hands[aiIdx],
-          topDiscard,
-          hasOpened: prev.hasOpened[aiIdx],
-          tableMelds: prev.tableMelds,
-          playerIndex: aiIdx,
-          requiredThreshold: req,
-          difficulty,
-          canDrawDiscard: prev.isInitialTapisCard,
-        });
+        const source = isSimple
+          ? decideSimpleAIDrawSource({
+              hand: prev.hands[aiIdx],
+              topDiscard,
+              playerIndex: aiIdx,
+              difficulty,
+            })
+          : decideAIDrawSource({
+              hand: prev.hands[aiIdx],
+              topDiscard,
+              hasOpened: prev.hasOpened[aiIdx],
+              tableMelds: prev.tableMelds,
+              playerIndex: aiIdx,
+              requiredThreshold: req,
+              difficulty,
+              canDrawDiscard: prev.isInitialTapisCard,
+            });
 
-        if (source === 'discard' && topDiscard && prev.isInitialTapisCard) {
+        if (source === 'discard' && topDiscard && (isSimple || prev.isInitialTapisCard)) {
           const nextHands = [...prev.hands];
           nextHands[aiIdx] = [...nextHands[aiIdx], topDiscard];
           return {
@@ -837,15 +959,17 @@ export function useRami72Game(params: {
         );
         if (nextStock.length === 0) {
           let bestIdx = 0;
-          let bestPen = Infinity;
+          let bestMetric = Infinity;
           prev.hands.forEach((h, i) => {
-            const p = computeHandPenalty(h);
-            if (p < bestPen) {
-              bestPen = p;
+            const metric = isSimple
+              ? h.length - findBestCoverageMelds(h, i).usedCardIds.size
+              : computeHandPenalty(h);
+            if (metric < bestMetric) {
+              bestMetric = metric;
               bestIdx = i;
             }
           });
-          return finishRoundState(prev, bestIdx, prev.hands, totalRounds);
+          return finishRoundState(prev, bestIdx, prev.hands, totalRounds, gameMode);
         }
 
         const drawn = nextStock[nextStock.length - 1];
@@ -866,7 +990,15 @@ export function useRami72Game(params: {
     }, 640);
 
     return () => window.clearTimeout(timer);
-  }, [state.phase, state.activePlayer, state.turnStep, difficulty, totalRounds]);
+  }, [
+    state.phase,
+    state.activePlayer,
+    state.turnStep,
+    difficulty,
+    totalRounds,
+    isSimple,
+    gameMode,
+  ]);
 
   // AI Effect 2: AI Play Melds / Extend / Discard step
   useEffect(() => {
@@ -891,6 +1023,58 @@ export function useRami72Game(params: {
 
         let hand = [...prev.hands[aiIdx]];
         let tableMelds = [...prev.tableMelds];
+
+        if (isSimple) {
+          const win = findSimpleWinSolution(hand, aiIdx, prev.drawnFromDiscardId);
+          if (win.canWin) {
+            const nextHands = [...prev.hands];
+            nextHands[aiIdx] = [];
+            const nextTableMelds = [...tableMelds, ...win.melds];
+            const nextDiscard = win.discardCard
+              ? [...prev.discard, win.discardCard]
+              : prev.discard;
+            return enterRevealState(
+              {
+                ...prev,
+                hands: nextHands,
+                tableMelds: nextTableMelds,
+                discard: nextDiscard,
+              },
+              aiIdx,
+              nextHands,
+              win.melds.map((m) => m.id),
+              win.discardCard
+                ? `Étale toute sa main · Jette ${formatCardShort(win.discardCard)}`
+                : 'Étale toute sa main !'
+            );
+          }
+
+          const discardCard = chooseSimpleAIDiscard({
+            hand,
+            forbiddenDiscardId: prev.drawnFromDiscardId,
+            difficulty,
+            playerIndex: aiIdx,
+            discardPile: prev.discard,
+          });
+          const remaining = hand.filter((c) => c.id !== discardCard.id);
+          const nextHands = [...prev.hands];
+          nextHands[aiIdx] = remaining;
+          return {
+            ...prev,
+            hands: nextHands,
+            discard: [...prev.discard, discardCard],
+            activePlayer: (aiIdx + 1) % prev.players.length,
+            turnStep: 'DRAW',
+            isInitialTapisCard: false,
+            drawnFromDiscardId: null,
+            speech: {
+              ...prev.speech,
+              [aiIdx]: `Défausse ${formatCardShort(discardCard)}`,
+            },
+            soundCue: nextSoundCue(prev, 'snap'),
+          };
+        }
+
         const nextHasOpened = [...prev.hasOpened];
         const nextOpenedWith = [...prev.openedWith];
         let nextHighest = prev.highestOpeningScore;
@@ -1061,7 +1245,7 @@ export function useRami72Game(params: {
     }, 780);
 
     return () => window.clearTimeout(timer);
-  }, [state.phase, state.activePlayer, state.turnStep, difficulty]);
+  }, [state.phase, state.activePlayer, state.turnStep, difficulty, isSimple]);
 
   // Reveal winner's laid-down hand on the table before declaring the round/match winner
   useEffect(() => {
@@ -1079,13 +1263,14 @@ export function useRami72Game(params: {
           prev,
           prev.revealWinnerIndex,
           prev.hands,
-          totalRounds
+          totalRounds,
+          gameMode
         );
       });
     }, delayMs);
 
     return () => window.clearTimeout(timer);
-  }, [state.phase, state.revealWinnerIndex, totalRounds]);
+  }, [state.phase, state.revealWinnerIndex, totalRounds, gameMode]);
 
   const proceedFromReveal = useCallback(() => {
     setState((prev) => {
@@ -1096,10 +1281,11 @@ export function useRami72Game(params: {
         prev,
         prev.revealWinnerIndex,
         prev.hands,
-        totalRounds
+        totalRounds,
+        gameMode
       );
     });
-  }, [totalRounds]);
+  }, [totalRounds, gameMode]);
 
   // Keyboard shortcuts (Escape clears selection / closes rules, bare R toggles rules)
   useEffect(() => {
@@ -1137,6 +1323,7 @@ export function useRami72Game(params: {
     setFeedbackMessage(null);
     setState((prev) =>
       dealNewRound({
+        mode: gameMode,
         roundNumber: prev.roundNumber + 1,
         players: prev.players,
         cumulativePenalty: prev.cumulativePenalty,
@@ -1145,7 +1332,7 @@ export function useRami72Game(params: {
         soundCue: nextSoundCue(prev, 'deal'),
       })
     );
-  }, [sortMode]);
+  }, [gameMode, sortMode]);
 
   const handleRestartMatch = useCallback(() => {
     setSelectedIds(new Set());
@@ -1154,6 +1341,7 @@ export function useRami72Game(params: {
     const players = buildPlayersForCount(playerCount);
     setState((prev) =>
       dealNewRound({
+        mode: gameMode,
         roundNumber: 1,
         players,
         cumulativePenalty: players.map(() => 0),
@@ -1162,7 +1350,7 @@ export function useRami72Game(params: {
         soundCue: nextSoundCue(prev, 'deal'),
       })
     );
-  }, [playerCount, sortMode]);
+  }, [gameMode, playerCount, sortMode]);
 
   const topDiscard =
     state.discard.length > 0 ? state.discard[state.discard.length - 1] : null;
@@ -1184,20 +1372,64 @@ export function useRami72Game(params: {
   );
 
   const canDirectOpenWithSelection =
+    !isSimple &&
     isHumanPlay &&
     !humanOpened &&
     selectedMeldBundle !== null &&
     directOpeningCheck.valid;
 
   const canCommitStagedOpening =
+    !isSimple &&
     isHumanPlay &&
     !humanOpened &&
     stagedMelds.length > 0 &&
     stagedOpeningCheck.valid;
 
+  const canCommitSimpleStagedWin =
+    isSimple &&
+    isHumanPlay &&
+    stagedMelds.length > 0 &&
+    (visibleHumanHand.length === 0 ||
+      (visibleHumanHand.length === 1 &&
+        visibleHumanHand[0].id !== state.drawnFromDiscardId));
+
+  const simpleStagedDiscardCard =
+    canCommitSimpleStagedWin && visibleHumanHand.length === 1
+      ? visibleHumanHand[0]
+      : null;
+
+  const directSimpleWin = useMemo<{
+    melds: TableMeld[];
+    discardCard: Card | null;
+  } | null>(() => {
+    if (!isSimple || !isHumanPlay || selectedMeldBundle === null) return null;
+    const rem = visibleHumanHand.filter((c) => !selectedIds.has(c.id));
+    if (rem.length === 0) {
+      return {
+        melds: [...stagedMelds, ...selectedMeldBundle.melds],
+        discardCard: null,
+      };
+    }
+    if (rem.length === 1 && rem[0].id !== state.drawnFromDiscardId) {
+      return {
+        melds: [...stagedMelds, ...selectedMeldBundle.melds],
+        discardCard: rem[0],
+      };
+    }
+    return null;
+  }, [
+    isSimple,
+    isHumanPlay,
+    selectedMeldBundle,
+    visibleHumanHand,
+    selectedIds,
+    stagedMelds,
+    state.drawnFromDiscardId,
+  ]);
+
   const canDiscardSelected =
     isHumanPlay &&
-    stagedMelds.length === 0 &&
+    (isSimple || stagedMelds.length === 0) &&
     selectedCards.length === 1 &&
     !(
       state.drawnFromDiscardId === selectedCards[0].id &&
@@ -1205,7 +1437,7 @@ export function useRami72Game(params: {
     );
 
   const canDrawDiscard =
-    isHumanDraw && state.isInitialTapisCard && topDiscard !== null;
+    isHumanDraw && topDiscard !== null && (isSimple || state.isInitialTapisCard);
 
   const lastDrawnCard = useMemo(
     () =>
@@ -1217,6 +1449,8 @@ export function useRami72Game(params: {
 
   return {
     state,
+    gameMode,
+    isSimple,
     sortMode,
     selectedIds,
     stagedMelds,
@@ -1244,6 +1478,9 @@ export function useRami72Game(params: {
     canDrawDiscard,
     canDirectOpenWithSelection,
     canCommitStagedOpening,
+    canCommitSimpleStagedWin,
+    simpleStagedDiscardCard,
+    directSimpleWin,
     canDiscardSelected,
     handleChangeSortMode,
     reorderHandCard,
@@ -1254,6 +1491,7 @@ export function useRami72Game(params: {
     handleUnstageMeld,
     handleClearStaging,
     handleCommitMelds,
+    handleSimpleWin,
     handleClickTableMeld,
     handleHumanDiscard,
     proceedFromReveal,

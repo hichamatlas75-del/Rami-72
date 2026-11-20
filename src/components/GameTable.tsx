@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { BookOpen, RotateCcw, Trophy, Volume2, VolumeX } from 'lucide-react';
+import { BookOpen, Home, RotateCcw, Trophy, Volume2, VolumeX } from 'lucide-react';
 import feltTableImage from '../assets/images/rami_felt_table.jpg';
-import { Difficulty, PlayerCount, TotalRounds } from '../game/types';
+import { Difficulty, GameMode, PlayerCount, TotalRounds } from '../game/types';
 import { useRami72Game } from '../game/useRami72Game';
 import { OpponentStrip } from './OpponentStrip';
 import { PlayerHandArea } from './PlayerHandArea';
@@ -11,16 +11,20 @@ import { StockAndThresholdPanel } from './StockAndThresholdPanel';
 import { TableMeldsCanvas } from './TableMeldsCanvas';
 
 interface GameTableProps {
+  gameMode: GameMode;
   playerCount: PlayerCount;
   totalRounds: TotalRounds;
   difficulty: Difficulty;
+  onChangeGameMode: (mode: GameMode) => void;
   onExitToMenu: () => void;
 }
 
 export function GameTable({
+  gameMode,
   playerCount,
   totalRounds,
   difficulty,
+  onChangeGameMode,
   onExitToMenu,
 }: GameTableProps) {
   const [feltFailed, setFeltFailed] = useState(false);
@@ -28,6 +32,7 @@ export function GameTable({
 
   const {
     state,
+    isSimple,
     sortMode,
     selectedIds,
     stagedMelds,
@@ -55,6 +60,9 @@ export function GameTable({
     canDrawDiscard,
     canDirectOpenWithSelection,
     canCommitStagedOpening,
+    canCommitSimpleStagedWin,
+    simpleStagedDiscardCard,
+    directSimpleWin,
     canDiscardSelected,
     handleChangeSortMode,
     reorderHandCard,
@@ -65,12 +73,13 @@ export function GameTable({
     handleUnstageMeld,
     handleClearStaging,
     handleCommitMelds,
+    handleSimpleWin,
     handleClickTableMeld,
     handleHumanDiscard,
     proceedFromReveal,
     handleNextRound,
     handleRestartMatch,
-  } = useRami72Game({ playerCount, totalRounds, difficulty });
+  } = useRami72Game({ mode: gameMode, playerCount, totalRounds, difficulty });
 
   const opponents = state.players.slice(1);
   const revealMeldSet = useMemo(
@@ -87,15 +96,51 @@ export function GameTable({
   return (
     <div className="flex min-h-[100dvh] w-full flex-col bg-[#07130E] text-[#F5F2EB] lg:h-screen lg:overflow-hidden">
       {/* Strict 3-Zone Top Bar */}
-      <header className="z-30 flex items-center justify-between gap-3 border-b border-white/10 bg-[#081510]/95 px-4 py-2.5 sm:px-6">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <header className="z-30 flex items-center justify-between gap-2 border-b border-white/10 bg-[#081510]/95 px-3 py-2 sm:gap-3 sm:px-6 sm:py-2.5">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             type="button"
             onClick={onExitToMenu}
-            className="font-display text-lg font-semibold tracking-tight text-[#FDFBF7] whitespace-nowrap shrink-0 transition-colors hover:text-[#E5C158] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] rounded"
+            aria-label="Retour au menu principal"
+            title="Menu principal"
+            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-[#D4DDD9] shrink-0 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158]"
           >
-            Rami 72
+            <Home className="h-4 w-4" />
           </button>
+
+          <div
+            role="tablist"
+            aria-label="Onglets de jeu"
+            className="inline-flex items-center gap-0.5 rounded-lg border border-white/10 bg-white/[0.04] p-0.5 shrink-0"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!isSimple}
+              onClick={() => onChangeGameMode('rami72')}
+              className={`min-h-[30px] rounded-md px-2.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] ${
+                !isSimple
+                  ? 'bg-[#173A2A] text-[#E5C158] ring-1 ring-[#D4AF37]/50'
+                  : 'text-[#A6B7AF] hover:text-white'
+              }`}
+            >
+              Rami 72
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={isSimple}
+              onClick={() => onChangeGameMode('simple')}
+              className={`min-h-[30px] rounded-md px-2.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158] ${
+                isSimple
+                  ? 'bg-[#173A2A] text-[#E5C158] ring-1 ring-[#D4AF37]/50'
+                  : 'text-[#A6B7AF] hover:text-white'
+              }`}
+            >
+              Simple
+            </button>
+          </div>
+
           <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[11px] tabular-nums text-[#C8D4CE] md:hidden whitespace-nowrap">
             M {state.roundNumber}/{totalRounds}
           </span>
@@ -115,7 +160,11 @@ export function GameTable({
           <span aria-hidden="true" className="text-white/25">
             ·
           </span>
-          {state.highestOpeningScore === null ? (
+          {isSimple ? (
+            <span className="text-[#E5C158] font-medium">
+              Mode Simple · Sans comptage · 13 cartes
+            </span>
+          ) : state.highestOpeningScore === null ? (
             <span className="text-[#E5C158] font-medium">
               Seuil d’ouverture :{' '}
               <strong className="font-mono font-semibold tabular-nums text-white">
@@ -148,7 +197,7 @@ export function GameTable({
             type="button"
             onClick={() => setRulesOpen(true)}
             className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4DDD9] whitespace-nowrap shrink-0 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E5C158]"
-            title="Règles du Rami 72 (R)"
+            title={isSimple ? 'Règles du Rami Simple (R)' : 'Règles du Rami 72 (R)'}
           >
             <BookOpen className="h-4 w-4" />
             <span className="hidden sm:inline">Règles</span>
@@ -200,6 +249,7 @@ export function GameTable({
         />
 
         <OpponentStrip
+          isSimple={isSimple}
           opponents={opponents}
           phase={state.phase}
           activePlayer={state.activePlayer}
@@ -212,6 +262,7 @@ export function GameTable({
         {/* MIDDLE ZONE: Pioche & Défausse (Left) + Tapis des Combinaisons (Right) */}
         <section className="relative z-10 mx-auto my-2 flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-3 px-4 sm:flex-row sm:gap-5 sm:px-6">
           <StockAndThresholdPanel
+            isSimple={isSimple}
             humanOpened={humanOpened}
             humanOpenedWith={state.openedWith[0]}
             highestOpeningScore={state.highestOpeningScore}
@@ -231,6 +282,7 @@ export function GameTable({
           />
 
           <TableMeldsCanvas
+            isSimple={isSimple}
             tableMelds={state.tableMelds}
             players={state.players}
             humanOpened={humanOpened}
@@ -285,6 +337,7 @@ export function GameTable({
         )}
 
         <PlayerHandArea
+          isSimple={isSimple}
           visibleHumanHand={visibleHumanHand}
           selectedIds={selectedIds}
           selectedCards={selectedCards}
@@ -305,6 +358,9 @@ export function GameTable({
           feedbackMessage={feedbackMessage}
           canDirectOpenWithSelection={canDirectOpenWithSelection}
           canCommitStagedOpening={canCommitStagedOpening}
+          canCommitSimpleStagedWin={canCommitSimpleStagedWin}
+          simpleStagedDiscardCard={simpleStagedDiscardCard}
+          directSimpleWin={directSimpleWin}
           canDiscardSelected={canDiscardSelected}
           sortMode={sortMode}
           onToggleSelectCard={toggleSelectCard}
@@ -314,6 +370,7 @@ export function GameTable({
           onUnstageMeld={handleUnstageMeld}
           onClearStaging={handleClearStaging}
           onCommitMelds={handleCommitMelds}
+          onSimpleWin={handleSimpleWin}
           onDiscardSelected={handleHumanDiscard}
           onChangeSortMode={handleChangeSortMode}
         />
@@ -321,6 +378,7 @@ export function GameTable({
 
       {isSummaryPhase && !inspectingTable && state.roundResult && (
         <RoundModal
+          isSimple={isSimple}
           result={state.roundResult}
           totalRounds={totalRounds}
           isGameOver={state.phase === 'GAME_OVER'}
@@ -337,7 +395,11 @@ export function GameTable({
         />
       )}
 
-      <RulesDrawer open={rulesOpen} onClose={() => setRulesOpen(false)} />
+      <RulesDrawer
+        open={rulesOpen}
+        mode={gameMode}
+        onClose={() => setRulesOpen(false)}
+      />
     </div>
   );
 }

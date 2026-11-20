@@ -3,11 +3,15 @@ import {
   canGoOut,
   canOpen,
   chooseAIDiscard,
+  chooseSimpleAIDiscard,
   computeHandPenalty,
   createDoubleDeck,
   decideAIDrawSource,
+  decideSimpleAIDrawSource,
+  findBestCoverageMelds,
   findBestDisjointMelds,
   findBestOpeningMelds,
+  findSimpleWinSolution,
   isPureMeld,
   mulberry32,
   planLayoffs,
@@ -625,6 +629,133 @@ describe('rami72Engine', () => {
         difficulty: 'salon',
       });
       expect(drawChoice).toBe('discard');
+    });
+  });
+
+  describe('Rami Simple mode (13 cards, no scoring, free discard draw)', () => {
+    it('findBestCoverageMelds maximizes covered cards rather than raw points', () => {
+      // [A♥,A♦,A♣,A♠] scores 44 pts for 4 cards vs [A♥,A♦,A♣] + [A♠,2♠,3♠] scoring 39 pts for 6 cards
+      const hand = [
+        card('A', 'hearts'),
+        card('A', 'diamonds'),
+        card('A', 'clubs'),
+        card('A', 'spades'),
+        card('2', 'spades'),
+        card('3', 'spades'),
+        card('5', 'clubs'),
+        card('6', 'clubs'),
+        card('7', 'clubs'),
+        card('8', 'diamonds'),
+        card('9', 'diamonds'),
+        card('10', 'diamonds'),
+        card('V', 'diamonds'),
+      ];
+
+      const pointsOpt = findBestDisjointMelds(hand, 0);
+      expect(pointsOpt.usedCardIds.size).toBe(11);
+
+      const covOpt = findBestCoverageMelds(hand, 0);
+      expect(covOpt.usedCardIds.size).toBe(13);
+      expect(covOpt.melds).toHaveLength(4);
+    });
+
+    it('findSimpleWinSolution detects 14-card full cover, 13-card + discard wins, and respects forbiddenDiscardId', () => {
+      const base13 = [
+        card('2', 'hearts'),
+        card('3', 'hearts'),
+        card('4', 'hearts'),
+        card('5', 'spades'),
+        card('5', 'clubs'),
+        card('5', 'diamonds'),
+        card('6', 'clubs'),
+        card('7', 'clubs'),
+        card('8', 'clubs'),
+        card('9', 'spades'),
+        card('10', 'spades'),
+        card('V', 'spades'),
+        card('D', 'spades'),
+      ];
+
+      // 13 combined + 1 dead card -> win discarding the dead card
+      const dead = card('R', 'diamonds');
+      const win13Plus1 = findSimpleWinSolution([...base13, dead], 0);
+      expect(win13Plus1.canWin).toBe(true);
+      expect(win13Plus1.discardCard?.id).toBe(dead.id);
+      expect(win13Plus1.melds).toHaveLength(4);
+
+      // If that single dead card was just drawn from discard pile, cannot immediately re-discard it
+      const blockedWin = findSimpleWinSolution([...base13, dead], 0, dead.id);
+      expect(blockedWin.canWin).toBe(false);
+
+      // 14 combined cards (adding R♠ onto 9..D♠) -> immediate win with no discard needed
+      const win14 = findSimpleWinSolution([...base13, card('R', 'spades')], 0);
+      expect(win14.canWin).toBe(true);
+      expect(win14.discardCard).toBeNull();
+
+      // Alternate discard swap: 4 Kings + duplicate King where one King is forbiddenDiscardId
+      const altHand = [
+        ...base13.slice(0, 9), // 3 melds = 9 cards
+        card('R', 'hearts', 0),
+        card('R', 'diamonds', 0),
+        card('R', 'clubs', 0),
+        card('R', 'spades', 0),
+        card('R', 'spades', 1), // if R♠(1) was just drawn from discard, can discard R♠(0) instead
+      ];
+      const altWin = findSimpleWinSolution(altHand, 0, card('R', 'spades', 1).id);
+      expect(altWin.canWin).toBe(true);
+      expect(altWin.discardCard).not.toBeNull();
+      expect(altWin.discardCard?.id).not.toBe(card('R', 'spades', 1).id);
+    });
+
+    it('decideSimpleAIDrawSource picks discard for immediate win (no 72 minimum) or meld improvement, and chooseSimpleAIDiscard ignores points', () => {
+      // Even with very low point cards (2..5), taking topDiscard completes 13-card win -> must draw discard
+      const nearWinHand = [
+        card('2', 'hearts'),
+        card('3', 'hearts'),
+        card('4', 'hearts'),
+        card('2', 'spades'),
+        card('2', 'clubs'),
+        card('2', 'diamonds'),
+        card('3', 'clubs'),
+        card('4', 'clubs'),
+        card('5', 'clubs'),
+        card('6', 'spades'),
+        card('7', 'spades'),
+        card('8', 'spades'),
+        card('9', 'diamonds'),
+      ];
+      const winDraw = decideSimpleAIDrawSource({
+        hand: nearWinHand,
+        topDiscard: card('5', 'hearts'), // extends 2-3-4-5♥ so 13 cards + drop 9♦!
+        playerIndex: 1,
+        difficulty: 'salon',
+      });
+      expect(winDraw).toBe('discard');
+
+      // Useless card on discard -> draws from stock
+      const stockDraw = decideSimpleAIDrawSource({
+        hand: [card('4', 'hearts'), card('5', 'hearts'), card('9', 'clubs')],
+        topDiscard: card('R', 'diamonds'),
+        playerIndex: 1,
+        difficulty: 'maitre',
+      });
+      expect(stockDraw).toBe('stock');
+
+      // In Simple mode without points counting, keeps live high-rank pair [R♠, R♦] and sheds isolated 2♣
+      const discard = chooseSimpleAIDiscard({
+        hand: [
+          card('6', 'hearts'),
+          card('7', 'hearts'),
+          card('8', 'hearts'),
+          card('R', 'spades'),
+          card('R', 'diamonds'),
+          card('2', 'clubs'),
+        ],
+        forbiddenDiscardId: null,
+        difficulty: 'maitre',
+        playerIndex: 1,
+      });
+      expect(discard.id).toBe('d0-2-clubs');
     });
   });
 });

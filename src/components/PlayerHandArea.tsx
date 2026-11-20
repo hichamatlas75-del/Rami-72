@@ -18,6 +18,7 @@ import { formatCardShort } from '../game/useRami72Game';
 import { PlayingCard } from './PlayingCard';
 
 interface PlayerHandAreaProps {
+  isSimple?: boolean;
   visibleHumanHand: Card[];
   selectedIds: Set<string>;
   selectedCards: Card[];
@@ -26,6 +27,7 @@ interface PlayerHandAreaProps {
     melds: TableMeld[];
     totalPoints: number;
     remainingCount: number;
+    discardCard?: Card | null;
   } | null;
   stagedMelds: TableMeld[];
   stagedTotalPoints: number;
@@ -42,6 +44,9 @@ interface PlayerHandAreaProps {
   feedbackMessage: string | null;
   canDirectOpenWithSelection: boolean;
   canCommitStagedOpening: boolean;
+  canCommitSimpleStagedWin?: boolean;
+  simpleStagedDiscardCard?: Card | null;
+  directSimpleWin?: { melds: TableMeld[]; discardCard: Card | null } | null;
   canDiscardSelected: boolean;
   sortMode: SortMode;
   onToggleSelectCard: (cardId: string) => void;
@@ -51,11 +56,13 @@ interface PlayerHandAreaProps {
   onUnstageMeld: (meldId: string) => void;
   onClearStaging: () => void;
   onCommitMelds: (melds: TableMeld[], isOpening: boolean) => void;
+  onSimpleWin?: (melds: TableMeld[], discardCard: Card | null) => void;
   onDiscardSelected: () => void;
   onChangeSortMode: (mode: SortMode) => void;
 }
 
 export function PlayerHandArea({
+  isSimple = false,
   visibleHumanHand,
   selectedIds,
   selectedCards,
@@ -76,6 +83,9 @@ export function PlayerHandArea({
   feedbackMessage,
   canDirectOpenWithSelection,
   canCommitStagedOpening,
+  canCommitSimpleStagedWin = false,
+  simpleStagedDiscardCard = null,
+  directSimpleWin = null,
   canDiscardSelected,
   sortMode,
   onToggleSelectCard,
@@ -85,6 +95,7 @@ export function PlayerHandArea({
   onUnstageMeld,
   onClearStaging,
   onCommitMelds,
+  onSimpleWin,
   onDiscardSelected,
   onChangeSortMode,
 }: PlayerHandAreaProps) {
@@ -92,6 +103,9 @@ export function PlayerHandArea({
   const [movingCardId, setMovingCardId] = useState<string | null>(null);
   const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
   const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
+
+  const stagedCardCount = stagedMelds.reduce((sum, m) => sum + m.slots.length, 0);
+  const totalHumanCards = visibleHumanHand.length + stagedCardCount;
 
   const activeMovingCard =
     reorderMode && movingCardId
@@ -149,46 +163,63 @@ export function PlayerHandArea({
       aria-label="Votre main et vos actions"
       className="relative z-20 mx-auto flex w-full max-w-6xl flex-col items-center px-3 pb-3 pt-1 sm:px-6 sm:pb-4"
     >
-      {/* Pre-opening Staging Strip */}
+      {/* Pre-opening / Private Hand Staging Strip */}
       {stagedMelds.length > 0 && (
         <div className="mb-2 flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-[#D4AF37]/40 bg-[#081B13]/92 px-3.5 py-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-[#E5C158]">
-              Pose préparée :{' '}
-              <strong className="font-mono tabular-nums text-white">
-                {stagedTotalPoints} / {requiredThreshold} pts
-              </strong>
-            </span>
-            <span
-              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap ${
-                stagedOpeningCheck.hasPureSet
-                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
-                  : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
-              }`}
-            >
-              {stagedOpeningCheck.hasPureSet ? '✓' : '✕'} Trio sans joker
-            </span>
-            <span
-              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap ${
-                stagedOpeningCheck.hasPureRun
-                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
-                  : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
-              }`}
-            >
-              {stagedOpeningCheck.hasPureRun ? '✓' : '✕'} Suite sans joker
-            </span>
-            <span
-              className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums whitespace-nowrap ${
-                stagedOpeningCheck.meetsPureMin
-                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
-                  : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
-              }`}
-            >
-              {stagedOpeningCheck.meetsPureMin ? '✓ ' : ''}Sans joker{' '}
-              {stagedOpeningCheck.purePoints}/{INITIAL_OPENING_PURE_MIN} pts
-            </span>
+            {isSimple ? (
+              <span className="text-xs font-medium text-[#E5C158]">
+                En main · Prêt :{' '}
+                <strong className="font-mono tabular-nums text-white">
+                  {stagedCardCount} / {Math.max(13, totalHumanCards - 1)} cartes
+                </strong>
+              </span>
+            ) : (
+              <>
+                <span className="text-xs font-medium text-[#E5C158]">
+                  Pose préparée :{' '}
+                  <strong className="font-mono tabular-nums text-white">
+                    {stagedTotalPoints} / {requiredThreshold} pts
+                  </strong>
+                </span>
+                <span
+                  className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap ${
+                    stagedOpeningCheck.hasPureSet
+                      ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                      : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+                  }`}
+                >
+                  {stagedOpeningCheck.hasPureSet ? '✓' : '✕'} Trio sans joker
+                </span>
+                <span
+                  className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap ${
+                    stagedOpeningCheck.hasPureRun
+                      ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                      : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+                  }`}
+                >
+                  {stagedOpeningCheck.hasPureRun ? '✓' : '✕'} Suite sans joker
+                </span>
+                <span
+                  className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums whitespace-nowrap ${
+                    stagedOpeningCheck.meetsPureMin
+                      ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                      : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+                  }`}
+                >
+                  {stagedOpeningCheck.meetsPureMin ? '✓ ' : ''}Sans joker{' '}
+                  {stagedOpeningCheck.purePoints}/{INITIAL_OPENING_PURE_MIN} pts
+                </span>
+              </>
+            )}
             {stagedMelds.map((m) => {
               const pure = isPureMeld(m);
+              const meldTypeLabel =
+                m.type === 'run'
+                  ? 'Suite'
+                  : m.slots.length >= 4
+                  ? 'Carré'
+                  : 'Trio';
               return (
                 <div
                   key={m.id}
@@ -197,14 +228,20 @@ export function PlayerHandArea({
                   <span className="font-mono text-[#FDFBF7]">
                     {m.slots.map((s) => formatCardShort(s.card)).join(' ')}
                   </span>
-                  <span
-                    className={`font-mono text-[11px] ${
-                      pure ? 'text-[#E5C158]' : 'text-amber-300'
-                    }`}
-                  >
-                    ({m.points}
-                    {pure ? '' : ' · Joker'})
-                  </span>
+                  {isSimple ? (
+                    <span className="text-[11px] text-[#E5C158]">
+                      ({meldTypeLabel})
+                    </span>
+                  ) : (
+                    <span
+                      className={`font-mono text-[11px] ${
+                        pure ? 'text-[#E5C158]' : 'text-amber-300'
+                      }`}
+                    >
+                      ({m.points}
+                      {pure ? '' : ' · Joker'})
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => onUnstageMeld(m.id)}
@@ -225,29 +262,54 @@ export function PlayerHandArea({
               className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1 text-xs font-medium text-[#D4DDD9] whitespace-nowrap shrink-0 hover:bg-white/10"
             >
               <Undo2 className="h-3.5 w-3.5" />
-              Annuler
+              {isSimple ? 'Tout en main' : 'Annuler'}
             </button>
-            <button
-              type="button"
-              disabled={!canCommitStagedOpening}
-              onClick={() => onCommitMelds(stagedMelds, true)}
-              title={stagedOpeningCheck.reason}
-              className={`min-h-[36px] rounded-lg px-3.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
-                canCommitStagedOpening
-                  ? 'bg-[#D4AF37] text-[#081510] hover:bg-[#E5C158]'
-                  : 'cursor-not-allowed border border-white/15 bg-white/[0.06] text-[#9BB0A7]'
-              }`}
-            >
-              {canCommitStagedOpening
-                ? `Étaler sur le tapis (${stagedTotalPoints} pts)`
-                : !stagedOpeningCheck.hasPureSet
-                ? 'Manque 1 trio sans joker'
-                : !stagedOpeningCheck.hasPureRun
-                ? 'Manque 1 suite sans joker'
-                : !stagedOpeningCheck.meetsPureMin
-                ? `Sans joker : ${stagedOpeningCheck.purePoints}/${INITIAL_OPENING_PURE_MIN} pts`
-                : `Étaler (${stagedTotalPoints}/${requiredThreshold} pts)`}
-            </button>
+            {isSimple ? (
+              <button
+                type="button"
+                disabled={!canCommitSimpleStagedWin}
+                onClick={() =>
+                  onSimpleWin?.(stagedMelds, simpleStagedDiscardCard)
+                }
+                className={`min-h-[36px] rounded-lg px-3.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                  canCommitSimpleStagedWin
+                    ? 'bg-[#D4AF37] text-[#081510] hover:bg-[#E5C158]'
+                    : 'cursor-not-allowed border border-white/15 bg-white/[0.06] text-[#9BB0A7]'
+                }`}
+              >
+                {canCommitSimpleStagedWin
+                  ? simpleStagedDiscardCard
+                    ? `Étaler & Gagner (jette ${formatCardShort(simpleStagedDiscardCard)})`
+                    : 'Étaler & Gagner !'
+                  : !isHumanPlay
+                  ? 'Attendez votre tour'
+                  : visibleHumanHand.length === 1
+                  ? 'Autre défausse requise'
+                  : `Encore ${visibleHumanHand.length - 1} à combiner`}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!canCommitStagedOpening}
+                onClick={() => onCommitMelds(stagedMelds, true)}
+                title={stagedOpeningCheck.reason}
+                className={`min-h-[36px] rounded-lg px-3.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                  canCommitStagedOpening
+                    ? 'bg-[#D4AF37] text-[#081510] hover:bg-[#E5C158]'
+                    : 'cursor-not-allowed border border-white/15 bg-white/[0.06] text-[#9BB0A7]'
+                }`}
+              >
+                {canCommitStagedOpening
+                  ? `Étaler sur le tapis (${stagedTotalPoints} pts)`
+                  : !stagedOpeningCheck.hasPureSet
+                  ? 'Manque 1 trio sans joker'
+                  : !stagedOpeningCheck.hasPureRun
+                  ? 'Manque 1 suite sans joker'
+                  : !stagedOpeningCheck.meetsPureMin
+                  ? `Sans joker : ${stagedOpeningCheck.purePoints}/${INITIAL_OPENING_PURE_MIN} pts`
+                  : `Étaler (${stagedTotalPoints}/${requiredThreshold} pts)`}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -282,31 +344,43 @@ export function PlayerHandArea({
             <span className="font-medium text-[#FBBF24]">{feedbackMessage}</span>
           ) : isHumanDraw ? (
             <span className="font-medium text-[#E5C158]">
-              {isInitialTapisCard
+              {isSimple
+                ? 'À vous · Piochez la dernière carte du tapis ou une carte cachée'
+                : isInitialTapisCard
                 ? 'À vous · Prenez la 15e carte dévoilée ou piochez caché'
                 : 'À vous · Piochez d’abord une carte cachée'}
             </span>
           ) : isHumanPlay ? (
             <span className="font-medium text-[#E4ECE8]">
               {selectedMeldBundle
-                ? !humanOpened &&
-                  !canDirectOpenWithSelection &&
-                  directOpeningCheck.totalPoints >= requiredThreshold &&
-                  directOpeningCheck.reason
+                ? isSimple
+                  ? directSimpleWin
+                    ? 'Toute votre main est prête ! Cliquez pour étaler et gagner'
+                    : selectedMeldBundle.melds.length > 1
+                    ? `${selectedMeldBundle.melds.length} combinaisons valides (mettez de côté)`
+                    : `Combinaison valide (${selectedMeldBundle.melds[0].type === 'run' ? 'Suite' : 'Trio/Carré'})`
+                  : !humanOpened &&
+                    !canDirectOpenWithSelection &&
+                    directOpeningCheck.totalPoints >= requiredThreshold &&
+                    directOpeningCheck.reason
                   ? directOpeningCheck.reason
                   : selectedMeldBundle.melds.length > 1
                   ? `${selectedMeldBundle.melds.length} combinaisons valides (${selectedMeldBundle.totalPoints} pts)`
                   : `Combinaison valide (${selectedMeldBundle.melds[0].type === 'run' ? 'Suite' : 'Trio/Carré'} · ${selectedMeldBundle.totalPoints} pts)`
                 : selectedCards.length >= 3
-                ? humanOpened
+                ? !isSimple && humanOpened
                   ? `${selectedCards.length} cartes · Sélection invalide (ou touchez le tapis)`
                   : `${selectedCards.length} cartes · Formez une suite ou un trio/carré valide`
                 : selectedCards.length > 0
                 ? `${selectedCards.length} ${selectedCards.length > 1 ? 'cartes sélectionnées' : 'carte sélectionnée'}`
                 : autoCompleteBundle
-                ? autoCompleteBundle.remainingCount === 0
+                ? isSimple
+                  ? 'Toute votre main est combinable ! Cliquez sur « Étaler & Gagner ! »'
+                  : autoCompleteBundle.remainingCount === 0
                   ? 'Toute votre main est prête à être étalée !'
                   : 'Main prête : étalez puis défaussez votre dernière carte !'
+                : isSimple
+                ? 'Formez des suites ou trios avec vos 13 cartes, ou défaussez 1 carte'
                 : humanOpened
                 ? 'Sélectionnez des cartes pour étaler, compléter ou défausser'
                 : `Préparez 1 trio + 1 suite + 72 pts sans joker (${requiredThreshold}+ pts total)`}
@@ -352,11 +426,27 @@ export function PlayerHandArea({
             </div>
           )}
 
-          {/* One-click full hand laydown when entire hand (<= 1 card left) is ready */}
+          {/* One-click full hand laydown / win */}
           {!reorderMode &&
             isHumanPlay &&
             selectedCards.length === 0 &&
-            autoCompleteBundle && (
+            autoCompleteBundle &&
+            (isSimple ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onSimpleWin?.(
+                    autoCompleteBundle.melds,
+                    autoCompleteBundle.discardCard ?? null
+                  )
+                }
+                className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 shadow-[0_6px_18px_rgba(212,175,55,0.28)] transition-colors hover:bg-[#E5C158]"
+              >
+                {autoCompleteBundle.discardCard
+                  ? `Étaler & Gagner (jette ${formatCardShort(autoCompleteBundle.discardCard)})`
+                  : 'Étaler & Gagner !'}
+              </button>
+            ) : (
               <button
                 type="button"
                 onClick={() =>
@@ -366,9 +456,39 @@ export function PlayerHandArea({
               >
                 Étaler toute ma main ({autoCompleteBundle.totalPoints} pts)
               </button>
-            )}
+            ))}
 
           {!reorderMode &&
+            isSimple &&
+            isHumanPlay &&
+            selectedMeldBundle &&
+            (directSimpleWin ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onSimpleWin?.(
+                    directSimpleWin.melds,
+                    directSimpleWin.discardCard
+                  )
+                }
+                className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 shadow-[0_6px_18px_rgba(212,175,55,0.28)] transition-colors hover:bg-[#E5C158]"
+              >
+                {directSimpleWin.discardCard
+                  ? `Étaler & Gagner (jette ${formatCardShort(directSimpleWin.discardCard)})`
+                  : 'Étaler & Gagner !'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onStageSelectedMeld}
+                className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 transition-colors hover:bg-[#E5C158]"
+              >
+                Mettre de côté
+              </button>
+            ))}
+
+          {!reorderMode &&
+            !isSimple &&
             isHumanPlay &&
             !humanOpened &&
             selectedMeldBundle &&
@@ -396,7 +516,7 @@ export function PlayerHandArea({
               </button>
             ))}
 
-          {!reorderMode && isHumanPlay && humanOpened && selectedMeldBundle && (
+          {!reorderMode && !isSimple && isHumanPlay && humanOpened && selectedMeldBundle && (
             <button
               type="button"
               onClick={() => onCommitMelds(selectedMeldBundle.melds, false)}
@@ -409,7 +529,7 @@ export function PlayerHandArea({
           {!reorderMode &&
             isHumanPlay &&
             selectedCards.length === 1 &&
-            stagedMelds.length === 0 && (
+            (isSimple || stagedMelds.length === 0) && (
               <button
                 type="button"
                 onClick={onDiscardSelected}
