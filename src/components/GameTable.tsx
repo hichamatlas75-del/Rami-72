@@ -49,8 +49,11 @@ export function GameTable({
     selectedCards,
     selectedMeldBundle,
     autoCompleteBundle,
+    forcedDiscardOpeningBundle,
     lastDrawnCardId,
     lastDrawnCard,
+    mustOpenWithDiscardCard,
+    canOpenWithSecondaryDiscard,
     stagedTotalPoints,
     stagedOpeningCheck,
     directOpeningCheck,
@@ -69,6 +72,7 @@ export function GameTable({
     nudgeHandCard,
     toggleSelectCard,
     handleHumanDraw,
+    handleCancelDiscardDrawForOpen,
     handleStageSelectedMeld,
     handleUnstageMeld,
     handleClearStaging,
@@ -275,6 +279,7 @@ export function GameTable({
             isInitialTapisCard={state.isInitialTapisCard}
             isHumanDraw={isHumanDraw}
             canDrawDiscard={canDrawDiscard}
+            canOpenWithSecondaryDiscard={canOpenWithSecondaryDiscard}
             canDiscardSelected={canDiscardSelected}
             onDrawStock={() => handleHumanDraw('stock')}
             onDrawDiscard={() => handleHumanDraw('discard')}
@@ -343,12 +348,16 @@ export function GameTable({
           selectedCards={selectedCards}
           selectedMeldBundle={selectedMeldBundle}
           autoCompleteBundle={autoCompleteBundle}
+          forcedDiscardOpeningBundle={forcedDiscardOpeningBundle}
           stagedMelds={stagedMelds}
           stagedTotalPoints={stagedTotalPoints}
           stagedOpeningCheck={stagedOpeningCheck}
           directOpeningCheck={directOpeningCheck}
           lastDrawnCardId={lastDrawnCardId}
           lastDrawnCard={lastDrawnCard}
+          mustOpenWithDiscardCard={mustOpenWithDiscardCard}
+          canOpenWithSecondaryDiscard={canOpenWithSecondaryDiscard}
+          topDiscard={topDiscard}
           requiredThreshold={requiredThreshold}
           humanOpened={humanOpened}
           isHumanDraw={isHumanDraw}
@@ -366,6 +375,7 @@ export function GameTable({
           onToggleSelectCard={toggleSelectCard}
           onReorderHandCard={reorderHandCard}
           onNudgeHandCard={nudgeHandCard}
+          onCancelDiscardDrawForOpen={handleCancelDiscardDrawForOpen}
           onStageSelectedMeld={handleStageSelectedMeld}
           onUnstageMeld={handleUnstageMeld}
           onClearStaging={handleClearStaging}

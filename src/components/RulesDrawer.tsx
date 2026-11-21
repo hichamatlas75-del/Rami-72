@@ -228,10 +228,30 @@ export function RulesDrawer({ open, mode = 'rami72', onClose }: RulesDrawerProps
                 </h3>
                 <ul className="list-disc space-y-1.5 pl-5 text-[#C1CEC8]">
                   <li>
-                    <strong className="text-white">1. Piocher :</strong> seule la{' '}
+                    <strong className="text-white">1. Piocher :</strong> avant d’avoir
+                    étalé, seule la{' '}
                     <strong className="text-white">première carte dévoilée</strong> (15e carte
-                    au tapis en début de manche) peut être prise ; ensuite, tous les joueurs
-                    piochent uniquement les <strong className="text-white">cartes cachées</strong>.
+                    au tapis en début de manche) peut être prise librement. Ensuite :
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-[#B5C5BE]">
+                      <li>
+                        <strong className="text-white">Une fois ouvert (étalé) :</strong>{' '}
+                        prenez au choix la{' '}
+                        <strong className="text-[#E5C158]">dernière carte jetée</strong> ou
+                        une carte cachée.
+                      </li>
+                      <li>
+                        <strong className="text-white">Avant d’avoir étalé :</strong> vous
+                        pouvez aussi prendre la{' '}
+                        <strong className="text-[#E5C158]">dernière carte jetée</strong>{' '}
+                        uniquement si vous{' '}
+                        <strong className="text-white">étalez sur le coup</strong> et que
+                        cette carte complète un{' '}
+                        <strong className="text-[#E5C158]">
+                          2e trio ou une 2e suite
+                        </strong>{' '}
+                        (hors du trio et de la suite obligatoires).
+                      </li>
+                    </ul>
                   </li>
                   <li>
                     <strong className="text-white">2. Poser / Compléter :</strong> préparez vos

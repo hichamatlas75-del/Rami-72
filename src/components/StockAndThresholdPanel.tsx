@@ -17,6 +17,7 @@ interface StockAndThresholdPanelProps {
   isInitialTapisCard: boolean;
   isHumanDraw: boolean;
   canDrawDiscard: boolean;
+  canOpenWithSecondaryDiscard?: boolean;
   canDiscardSelected: boolean;
   onDrawStock: () => void;
   onDrawDiscard: () => void;
@@ -37,6 +38,7 @@ export function StockAndThresholdPanel({
   isInitialTapisCard,
   isHumanDraw,
   canDrawDiscard,
+  canOpenWithSecondaryDiscard = false,
   canDiscardSelected,
   onDrawStock,
   onDrawDiscard,
@@ -149,9 +151,11 @@ export function StockAndThresholdPanel({
             disabled={!canDrawDiscard && !canDiscardSelected}
             aria-label={
               canDrawDiscard && topDiscard
-                ? isSimple
-                  ? `Prendre la dernière carte jetée sur le tapis : ${formatCardShort(topDiscard)}`
-                  : `Prendre la 15e carte dévoilée : ${formatCardShort(topDiscard)}`
+                ? !isSimple && isInitialTapisCard
+                  ? `Prendre la 15e carte dévoilée : ${formatCardShort(topDiscard)}`
+                  : canOpenWithSecondaryDiscard
+                  ? `Prendre la dernière carte jetée pour étaler (2e trio/suite) : ${formatCardShort(topDiscard)}`
+                  : `Prendre la dernière carte jetée : ${formatCardShort(topDiscard)}`
                 : canDiscardSelected
                 ? 'Défausser la carte sélectionnée'
                 : 'Défausse'
@@ -174,9 +178,11 @@ export function StockAndThresholdPanel({
             {canDiscardSelected
               ? 'Défausser ici'
               : canDrawDiscard && topDiscard
-              ? isSimple
-                ? 'Prendre du tapis'
-                : '15e dévoilée'
+              ? !isSimple && isInitialTapisCard
+                ? '15e dévoilée'
+                : canOpenWithSecondaryDiscard
+                ? 'Prendre pour étaler'
+                : 'Prendre du tapis'
               : isInitialTapisCard && topDiscard
               ? '15e dévoilée'
               : 'Défausse'}

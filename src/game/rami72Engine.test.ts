@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canGoOut,
   canOpen,
+  canPlayerDrawDiscard,
   chooseAIDiscard,
   chooseSimpleAIDiscard,
   computeHandPenalty,
@@ -446,6 +447,57 @@ describe('rami72Engine', () => {
         canDrawDiscard: false,
       });
       expect(blockedDraw).toBe('stock');
+
+      // En Rami 72 : autorisé pour la 15e carte initiale OU une fois ouvert (étalé), interdit sinon
+      expect(
+        canPlayerDrawDiscard({
+          isSimple: false,
+          isInitialTapisCard: true,
+          hasOpened: false,
+          hasTopDiscard: true,
+        })
+      ).toBe(true);
+      expect(
+        canPlayerDrawDiscard({
+          isSimple: false,
+          isInitialTapisCard: false,
+          hasOpened: false,
+          hasTopDiscard: true,
+        })
+      ).toBe(false);
+      expect(
+        canPlayerDrawDiscard({
+          isSimple: false,
+          isInitialTapisCard: false,
+          hasOpened: true,
+          hasTopDiscard: true,
+        })
+      ).toBe(true);
+      expect(
+        canPlayerDrawDiscard({
+          isSimple: false,
+          isInitialTapisCard: false,
+          hasOpened: true,
+          hasTopDiscard: false,
+        })
+      ).toBe(false);
+      expect(
+        canPlayerDrawDiscard({
+          isSimple: false,
+          isInitialTapisCard: false,
+          hasOpened: false,
+          hasTopDiscard: true,
+          canOpenUsingDiscard: true,
+        })
+      ).toBe(true);
+      expect(
+        canPlayerDrawDiscard({
+          isSimple: true,
+          isInitialTapisCard: false,
+          hasOpened: false,
+          hasTopDiscard: true,
+        })
+      ).toBe(true);
     });
   });
 
@@ -629,6 +681,136 @@ describe('rami72Engine', () => {
         difficulty: 'salon',
       });
       expect(drawChoice).toBe('discard');
+    });
+
+    it('pre-opening discard draw requires opening immediately with the discard card in a 2nd trio or 2nd suite (never the mandatory trio/suite)', () => {
+      const pureSetKings = validateMeld(
+        [card('R', 'hearts'), card('R', 'diamonds'), card('R', 'clubs')],
+        0
+      )!; // 30
+      const pureRunVDR = validateMeld(
+        [card('V', 'spades'), card('D', 'spades'), card('R', 'spades')],
+        0
+      )!; // 30
+      const pureSetFours = validateMeld(
+        [card('4', 'hearts'), card('4', 'diamonds'), card('4', 'clubs')],
+        0
+      )!; // 12 -> total 72
+      const pureRunLow = validateMeld(
+        [card('5', 'clubs'), card('6', 'clubs'), card('7', 'clubs')],
+        0
+      )!; // 18 -> total 78
+
+      // 1. Discard card (4♣) is in the 2nd trio while mandatory pure Set (R-trio) & pure Run (V-D-R♠) remain untouched -> VALID
+      const valid2ndSet = validateOpeningMelds(
+        [pureSetKings, pureRunVDR, pureSetFours],
+        72,
+        card('4', 'clubs').id
+      );
+      expect(valid2ndSet.valid).toBe(true);
+      expect(valid2ndSet.usesRestrictedDiscard).toBe(true);
+      expect(valid2ndSet.discardOutsideMandatory).toBe(true);
+
+      // 2. Discard card (7♣) is in the 2nd suite while mandatory pure Set & Run remain untouched -> VALID (78 pts)
+      const valid2ndRun = validateOpeningMelds(
+        [pureSetKings, pureRunVDR, pureRunLow],
+        72,
+        card('7', 'clubs').id
+      );
+      expect(valid2ndRun.valid).toBe(true);
+
+      // 3. Discard card (R♠) enters the ONLY suite (V-D-R♠) -> REJECTED!
+      const invalidMandatoryRun = validateOpeningMelds(
+        [pureSetKings, pureRunVDR, pureSetFours],
+        72,
+        card('R', 'spades').id
+      );
+      expect(invalidMandatoryRun.valid).toBe(false);
+      expect(invalidMandatoryRun.discardOutsideMandatory).toBe(false);
+
+      // 4. Discard card (R♣) enters the ONLY set (R-trio) -> REJECTED!
+      const invalidMandatorySet = validateOpeningMelds(
+        [pureSetKings, pureRunVDR, pureRunLow],
+        72,
+        card('R', 'clubs').id
+      );
+      expect(invalidMandatorySet.valid).toBe(false);
+      expect(invalidMandatorySet.discardOutsideMandatory).toBe(false);
+
+      // 5. Discard card (9♠) is not used in the opening at all -> REJECTED!
+      const unusedDiscard = validateOpeningMelds(
+        [pureSetKings, pureRunVDR, pureSetFours],
+        72,
+        card('9', 'spades').id
+      );
+      expect(unusedDiscard.valid).toBe(false);
+      expect(unusedDiscard.usesRestrictedDiscard).toBe(false);
+
+      // 6. Solver + AI: holding R-trio (30) + V-D-R♠ (30) + 4♥,4♦ (missing 4♣) -> taking 4♣ opens legitimately!
+      const handNeeds2ndTrio = [
+        card('R', 'hearts'),
+        card('R', 'diamonds'),
+        card('R', 'clubs'),
+        card('V', 'spades'),
+        card('D', 'spades'),
+        card('R', 'spades'),
+        card('4', 'hearts'),
+        card('4', 'diamonds'),
+      ];
+      const discard4c = card('4', 'clubs');
+      const secSol = findBestOpeningMelds(
+        [...handNeeds2ndTrio, discard4c],
+        0,
+        72,
+        discard4c.id
+      );
+      expect(secSol.totalPoints).toBe(72);
+      expect(validateOpeningMelds(secSol.melds, 72, discard4c.id).valid).toBe(true);
+      expect(
+        decideAIDrawSource({
+          hand: handNeeds2ndTrio,
+          topDiscard: discard4c,
+          hasOpened: false,
+          tableMelds: [],
+          playerIndex: 1,
+          requiredThreshold: 72,
+          difficulty: 'salon',
+          mustOpenWithDiscard: true,
+        })
+      ).toBe('discard');
+
+      // 7. Solver + AI: holding R-trio (30) + 4-trio (12) + 9-trio (27) + V♠,D♠ (missing R♠ for the ONLY suite)
+      // Total with R♠ would be 30+12+27+30=99 >= 72, BUT R♠ enters the ONLY (mandatory) suite -> MUST NOT draw discard!
+      const handNeeds1stSuite = [
+        card('R', 'hearts'),
+        card('R', 'diamonds'),
+        card('R', 'clubs'),
+        card('4', 'hearts'),
+        card('4', 'diamonds'),
+        card('4', 'clubs'),
+        card('9', 'hearts'),
+        card('9', 'diamonds'),
+        card('9', 'clubs'),
+        card('V', 'spades'),
+        card('D', 'spades'),
+      ];
+      const discardRs = card('R', 'spades');
+      expect(
+        findBestOpeningMelds([...handNeeds1stSuite, discardRs], 0, 72, discardRs.id)
+          .melds
+      ).toHaveLength(0);
+      expect(
+        decideAIDrawSource({
+          hand: handNeeds1stSuite,
+          topDiscard: discardRs,
+          hasOpened: false,
+          tableMelds: [],
+          playerIndex: 1,
+          requiredThreshold: 72,
+          difficulty: 'maitre',
+          mustOpenWithDiscard: true,
+        })
+      ).toBe('stock');
     });
   });
 

@@ -429,12 +429,12 @@ export function TitleScreen({
 
                 <div className="space-y-1.5 border-t border-white/10 pt-4">
                   <h3 className="font-display text-base font-semibold text-[#E5C158]">
-                    04. Pioche cachée &amp; complétion
+                    04. Pioche &amp; complétion
                   </h3>
                   <p className="text-sm leading-relaxed text-[#BAC8C2]">
-                    Seule la 15e carte dévoilée au début peut être prise sur le tapis ; ensuite,
-                    tout le monde pioche caché. Une fois ouvert, complétez le tapis et videz
-                    votre main pour gagner !
+                    Une fois ouvert, ou avant d’ouvrir à condition d’étaler sur le coup en
+                    complétant un 2e trio ou une 2e suite (hors combinaison obligatoire),
+                    vous pouvez prendre la dernière carte jetée ou piocher caché !
                   </p>
                 </div>
               </div>

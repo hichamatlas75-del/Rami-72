@@ -29,12 +29,19 @@ interface PlayerHandAreaProps {
     remainingCount: number;
     discardCard?: Card | null;
   } | null;
+  forcedDiscardOpeningBundle?: {
+    melds: TableMeld[];
+    totalPoints: number;
+  } | null;
   stagedMelds: TableMeld[];
   stagedTotalPoints: number;
   stagedOpeningCheck: OpeningValidationResult;
   directOpeningCheck: OpeningValidationResult;
   lastDrawnCardId: string | null;
   lastDrawnCard: Card | null;
+  mustOpenWithDiscardCard?: Card | null;
+  canOpenWithSecondaryDiscard?: boolean;
+  topDiscard?: Card | null;
   requiredThreshold: number;
   humanOpened: boolean;
   isHumanDraw: boolean;
@@ -52,6 +59,7 @@ interface PlayerHandAreaProps {
   onToggleSelectCard: (cardId: string) => void;
   onReorderHandCard: (fromCardId: string, toCardId: string) => void;
   onNudgeHandCard: (cardId: string, delta: -1 | 1) => void;
+  onCancelDiscardDrawForOpen?: () => void;
   onStageSelectedMeld: () => void;
   onUnstageMeld: (meldId: string) => void;
   onClearStaging: () => void;
@@ -68,12 +76,16 @@ export function PlayerHandArea({
   selectedCards,
   selectedMeldBundle,
   autoCompleteBundle,
+  forcedDiscardOpeningBundle = null,
   stagedMelds,
   stagedTotalPoints,
   stagedOpeningCheck,
   directOpeningCheck,
   lastDrawnCardId,
   lastDrawnCard,
+  mustOpenWithDiscardCard = null,
+  canOpenWithSecondaryDiscard = false,
+  topDiscard = null,
   requiredThreshold,
   humanOpened,
   isHumanDraw,
@@ -91,6 +103,7 @@ export function PlayerHandArea({
   onToggleSelectCard,
   onReorderHandCard,
   onNudgeHandCard,
+  onCancelDiscardDrawForOpen,
   onStageSelectedMeld,
   onUnstageMeld,
   onClearStaging,
@@ -210,6 +223,22 @@ export function PlayerHandArea({
                   {stagedOpeningCheck.meetsPureMin ? '✓ ' : ''}Sans joker{' '}
                   {stagedOpeningCheck.purePoints}/{INITIAL_OPENING_PURE_MIN} pts
                 </span>
+                {mustOpenWithDiscardCard && (
+                  <span
+                    className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-medium whitespace-nowrap ${
+                      stagedOpeningCheck.usesRestrictedDiscard &&
+                      stagedOpeningCheck.discardOutsideMandatory
+                        ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                        : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+                    }`}
+                  >
+                    {stagedOpeningCheck.usesRestrictedDiscard &&
+                    stagedOpeningCheck.discardOutsideMandatory
+                      ? '✓'
+                      : '✕'}{' '}
+                    {formatCardShort(mustOpenWithDiscardCard)} en 2e trio/suite
+                  </span>
+                )}
               </>
             )}
             {stagedMelds.map((m) => {
@@ -301,10 +330,16 @@ export function PlayerHandArea({
               >
                 {canCommitStagedOpening
                   ? `Étaler sur le tapis (${stagedTotalPoints} pts)`
+                  : mustOpenWithDiscardCard &&
+                    !stagedOpeningCheck.usesRestrictedDiscard
+                  ? `Inclure « ${formatCardShort(mustOpenWithDiscardCard)} »`
                   : !stagedOpeningCheck.hasPureSet
                   ? 'Manque 1 trio sans joker'
                   : !stagedOpeningCheck.hasPureRun
                   ? 'Manque 1 suite sans joker'
+                  : mustOpenWithDiscardCard &&
+                    !stagedOpeningCheck.discardOutsideMandatory
+                  ? '2e trio ou 2e suite requis'
                   : !stagedOpeningCheck.meetsPureMin
                   ? `Sans joker : ${stagedOpeningCheck.purePoints}/${INITIAL_OPENING_PURE_MIN} pts`
                   : `Étaler (${stagedTotalPoints}/${requiredThreshold} pts)`}
@@ -348,6 +383,10 @@ export function PlayerHandArea({
                 ? 'À vous · Piochez la dernière carte du tapis ou une carte cachée'
                 : isInitialTapisCard
                 ? 'À vous · Prenez la 15e carte dévoilée ou piochez caché'
+                : humanOpened
+                ? 'À vous · Prenez la dernière carte jetée ou piochez caché'
+                : canOpenWithSecondaryDiscard && topDiscard
+                ? `À vous · Piochez caché ou prenez « ${formatCardShort(topDiscard)} » pour étaler (2e trio/suite)`
                 : 'À vous · Piochez d’abord une carte cachée'}
             </span>
           ) : isHumanPlay ? (
@@ -361,8 +400,9 @@ export function PlayerHandArea({
                     : `Combinaison valide (${selectedMeldBundle.melds[0].type === 'run' ? 'Suite' : 'Trio/Carré'})`
                   : !humanOpened &&
                     !canDirectOpenWithSelection &&
-                    directOpeningCheck.totalPoints >= requiredThreshold &&
-                    directOpeningCheck.reason
+                    directOpeningCheck.reason &&
+                    (directOpeningCheck.totalPoints >= requiredThreshold ||
+                      mustOpenWithDiscardCard !== null)
                   ? directOpeningCheck.reason
                   : selectedMeldBundle.melds.length > 1
                   ? `${selectedMeldBundle.melds.length} combinaisons valides (${selectedMeldBundle.totalPoints} pts)`
@@ -379,6 +419,8 @@ export function PlayerHandArea({
                   : autoCompleteBundle.remainingCount === 0
                   ? 'Toute votre main est prête à être étalée !'
                   : 'Main prête : étalez puis défaussez votre dernière carte !'
+                : mustOpenWithDiscardCard
+                ? `Étalez sur le coup avec « ${formatCardShort(mustOpenWithDiscardCard)} » en 2e trio ou 2e suite`
                 : isSimple
                 ? 'Formez des suites ou trios avec vos 13 cartes, ou défaussez 1 carte'
                 : humanOpened
@@ -457,6 +499,41 @@ export function PlayerHandArea({
                 Étaler toute ma main ({autoCompleteBundle.totalPoints} pts)
               </button>
             ))}
+
+          {/* 1-click opening after drawing topDiscard before opening */}
+          {!reorderMode &&
+            isHumanPlay &&
+            !isSimple &&
+            !humanOpened &&
+            !autoCompleteBundle &&
+            selectedCards.length === 0 &&
+            forcedDiscardOpeningBundle && (
+              <button
+                type="button"
+                onClick={() =>
+                  onCommitMelds(forcedDiscardOpeningBundle.melds, true)
+                }
+                className="min-h-[38px] rounded-lg bg-[#D4AF37] px-3.5 py-1.5 text-xs font-semibold text-[#081510] whitespace-nowrap shrink-0 shadow-[0_6px_18px_rgba(212,175,55,0.28)] transition-colors hover:bg-[#E5C158]"
+              >
+                Étaler l’ouverture ({forcedDiscardOpeningBundle.totalPoints} pts)
+              </button>
+            )}
+
+          {!reorderMode &&
+            isHumanPlay &&
+            !isSimple &&
+            !humanOpened &&
+            mustOpenWithDiscardCard &&
+            onCancelDiscardDrawForOpen && (
+              <button
+                type="button"
+                onClick={onCancelDiscardDrawForOpen}
+                className="inline-flex min-h-[38px] items-center gap-1 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-[#D4DDD9] whitespace-nowrap shrink-0 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+                Remettre {formatCardShort(mustOpenWithDiscardCard)}
+              </button>
+            )}
 
           {!reorderMode &&
             isSimple &&

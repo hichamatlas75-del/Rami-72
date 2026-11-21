@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   OpeningValidationResult,
+  canPlayerDrawDiscard,
   chooseAIDiscard,
   chooseSimpleAIDiscard,
   computeHandPenalty,
@@ -70,6 +71,8 @@ export interface TableState {
   isInitialTapisCard: boolean;
   /** Prevents immediately discarding the exact card just picked from the discard pile */
   drawnFromDiscardId: string | null;
+  /** When an unopened Rami 72 player draws topDiscard after the 15th card, they must open immediately using it in a 2nd trio/suite */
+  mustOpenWithDiscardId: string | null;
   /** Tracks the exact card drawn by the human on their current turn */
   lastDrawnCardId: string | null;
   speech: Record<number, string>;
@@ -152,6 +155,7 @@ function dealNewRound(params: {
     turnStep: 'DRAW',
     isInitialTapisCard: mode !== 'simple',
     drawnFromDiscardId: null,
+    mustOpenWithDiscardId: null,
     lastDrawnCardId: null,
     speech: {},
     cumulativePenalty,
@@ -176,6 +180,7 @@ function enterRevealState(
     phase: 'ROUND_REVEAL',
     isInitialTapisCard: false,
     drawnFromDiscardId: null,
+    mustOpenWithDiscardId: null,
     lastDrawnCardId: null,
     revealWinnerIndex: winnerIndex,
     revealMeldIds: Array.from(new Set(highlightMeldIds)),
@@ -398,7 +403,12 @@ export function useRami72Game(params: {
     }
     const best = humanOpened
       ? findBestDisjointMelds(visibleHumanHand, 0)
-      : findBestOpeningMelds(visibleHumanHand, 0, requiredThreshold);
+      : findBestOpeningMelds(
+          visibleHumanHand,
+          0,
+          requiredThreshold,
+          state.mustOpenWithDiscardId
+        );
     if (best.melds.length === 0) return null;
     const remainingCount = visibleHumanHand.length - best.usedCardIds.size;
     if (remainingCount > 1) return null;
@@ -412,9 +422,41 @@ export function useRami72Game(params: {
     isSimple,
     humanHand,
     state.drawnFromDiscardId,
+    state.mustOpenWithDiscardId,
     stagedMelds.length,
     visibleHumanHand,
     humanOpened,
+    requiredThreshold,
+  ]);
+
+  const forcedDiscardOpeningBundle = useMemo<{
+    melds: TableMeld[];
+    totalPoints: number;
+  } | null>(() => {
+    if (
+      !isHumanPlay ||
+      isSimple ||
+      humanOpened ||
+      !state.mustOpenWithDiscardId ||
+      stagedMelds.length > 0
+    ) {
+      return null;
+    }
+    const best = findBestOpeningMelds(
+      visibleHumanHand,
+      0,
+      requiredThreshold,
+      state.mustOpenWithDiscardId
+    );
+    if (best.melds.length === 0) return null;
+    return { melds: best.melds, totalPoints: best.totalPoints };
+  }, [
+    isHumanPlay,
+    isSimple,
+    humanOpened,
+    state.mustOpenWithDiscardId,
+    stagedMelds.length,
+    visibleHumanHand,
     requiredThreshold,
   ]);
 
@@ -522,10 +564,31 @@ export function useRami72Game(params: {
         }
 
         if (source === 'discard') {
-          if ((!isSimple && !prev.isInitialTapisCard) || prev.discard.length === 0) {
+          const top = prev.discard[prev.discard.length - 1];
+          const needsSecondaryOpen =
+            !isSimple && !prev.isInitialTapisCard && !prev.hasOpened[0];
+          const canOpenUsingDiscard =
+            needsSecondaryOpen &&
+            top !== undefined &&
+            findBestOpeningMelds(
+              [...prev.hands[0], top],
+              0,
+              getRequiredThreshold(prev.highestOpeningScore),
+              top.id
+            ).melds.length > 0;
+
+          if (
+            !canPlayerDrawDiscard({
+              isSimple,
+              isInitialTapisCard: prev.isInitialTapisCard,
+              hasOpened: prev.hasOpened[0],
+              hasTopDiscard: prev.discard.length > 0,
+              canOpenUsingDiscard,
+            })
+          ) {
             return prev;
           }
-          const drawn = prev.discard[prev.discard.length - 1];
+          const drawn = top;
           const nextDiscard = prev.discard.slice(0, -1);
           const nextHands = [...prev.hands];
           nextHands[0] = sortHand([...nextHands[0], drawn], sortMode);
@@ -536,8 +599,14 @@ export function useRami72Game(params: {
             turnStep: 'PLAY_OR_DISCARD',
             isInitialTapisCard: false,
             drawnFromDiscardId: drawn.id,
+            mustOpenWithDiscardId: needsSecondaryOpen ? drawn.id : null,
             lastDrawnCardId: drawn.id,
-            speech: { ...prev.speech, 0: `Prend ${formatCardShort(drawn)}` },
+            speech: {
+              ...prev.speech,
+              0: needsSecondaryOpen
+                ? `Prend ${formatCardShort(drawn)} (étalage)`
+                : `Prend ${formatCardShort(drawn)}`,
+            },
             soundCue: nextSoundCue(prev, 'snap'),
           };
         }
@@ -572,6 +641,7 @@ export function useRami72Game(params: {
           discard: nextDiscard,
           turnStep: 'PLAY_OR_DISCARD',
           drawnFromDiscardId: null,
+          mustOpenWithDiscardId: null,
           lastDrawnCardId: drawn.id,
           speech: { ...prev.speech, 0: 'Pioche' },
           soundCue: nextSoundCue(prev, 'snap'),
@@ -580,6 +650,40 @@ export function useRami72Game(params: {
     },
     [isHumanDraw, isSimple, gameMode, sortMode, totalRounds]
   );
+
+  const handleCancelDiscardDrawForOpen = useCallback(() => {
+    if (!isHumanPlay || !state.mustOpenWithDiscardId) return;
+    setStagedMelds([]);
+    setSelectedIds(new Set());
+    setFeedbackMessage(null);
+
+    setState((prev) => {
+      const targetId = prev.mustOpenWithDiscardId;
+      if (
+        prev.phase !== 'PLAYING' ||
+        prev.activePlayer !== 0 ||
+        prev.turnStep !== 'PLAY_OR_DISCARD' ||
+        !targetId
+      ) {
+        return prev;
+      }
+      const returnedCard = prev.hands[0].find((c) => c.id === targetId);
+      if (!returnedCard) return prev;
+      const nextHands = [...prev.hands];
+      nextHands[0] = prev.hands[0].filter((c) => c.id !== targetId);
+      return {
+        ...prev,
+        hands: nextHands,
+        discard: [...prev.discard, returnedCard],
+        turnStep: 'DRAW',
+        drawnFromDiscardId: null,
+        mustOpenWithDiscardId: null,
+        lastDrawnCardId: null,
+        speech: { ...prev.speech, 0: '' },
+        soundCue: nextSoundCue(prev, 'snap'),
+      };
+    });
+  }, [isHumanPlay, state.mustOpenWithDiscardId]);
 
   const handleStageSelectedMeld = useCallback(() => {
     if (!selectedMeldBundle) return;
@@ -665,7 +769,11 @@ export function useRami72Game(params: {
     (meldsToCommit: TableMeld[], isOpening: boolean) => {
       const totalPts = meldsToCommit.reduce((sum, m) => sum + m.points, 0);
       if (isOpening) {
-        const openingCheck = validateOpeningMelds(meldsToCommit, requiredThreshold);
+        const openingCheck = validateOpeningMelds(
+          meldsToCommit,
+          requiredThreshold,
+          state.mustOpenWithDiscardId
+        );
         if (!openingCheck.valid) {
           setFeedbackMessage(
             openingCheck.reason ??
@@ -709,6 +817,7 @@ export function useRami72Game(params: {
           openedWith: nextOpenedWith,
           highestOpeningScore: nextHighest,
           lastOpenerIndex: nextLastOpener,
+          mustOpenWithDiscardId: isOpening ? null : prev.mustOpenWithDiscardId,
           lastDrawnCardId:
             prev.lastDrawnCardId && usedIds.has(prev.lastDrawnCardId)
               ? null
@@ -734,7 +843,7 @@ export function useRami72Game(params: {
         return updatedState;
       });
     },
-    [requiredThreshold]
+    [requiredThreshold, state.mustOpenWithDiscardId]
   );
 
   const handleClickTableMeld = useCallback(
@@ -824,6 +933,12 @@ export function useRami72Game(params: {
 
   const handleHumanDiscard = useCallback(() => {
     if (!isHumanPlay) return;
+    if (!isSimple && state.mustOpenWithDiscardId) {
+      setFeedbackMessage(
+        'Vous devez étaler sur le coup avec la carte prise sur le tapis (en 2e trio/suite) ou la remettre sur le tapis.'
+      );
+      return;
+    }
     if (!isSimple && stagedMelds.length > 0) {
       setFeedbackMessage(
         'Étalez votre pose préparée ou cliquez sur « Annuler » avant de défausser.'
@@ -876,6 +991,7 @@ export function useRami72Game(params: {
         turnStep: 'DRAW',
         isInitialTapisCard: false,
         drawnFromDiscardId: null,
+        mustOpenWithDiscardId: null,
         lastDrawnCardId: null,
         speech: { ...prev.speech, 0: `Défausse ${formatCardShort(card)}` },
         soundCue: nextSoundCue(prev, 'snap'),
@@ -884,6 +1000,7 @@ export function useRami72Game(params: {
   }, [
     isHumanPlay,
     isSimple,
+    state.mustOpenWithDiscardId,
     stagedMelds,
     visibleHumanHand,
     handleSimpleWin,
@@ -917,6 +1034,10 @@ export function useRami72Game(params: {
           prev.discard.length > 0 ? prev.discard[prev.discard.length - 1] : null;
         const req = getRequiredThreshold(prev.highestOpeningScore);
 
+        const aiNeedsSecondaryOpen =
+          !isSimple && !prev.isInitialTapisCard && !prev.hasOpened[aiIdx];
+        const aiCanDrawDiscard =
+          prev.isInitialTapisCard || prev.hasOpened[aiIdx] || aiNeedsSecondaryOpen;
         const source = isSimple
           ? decideSimpleAIDrawSource({
               hand: prev.hands[aiIdx],
@@ -932,10 +1053,11 @@ export function useRami72Game(params: {
               playerIndex: aiIdx,
               requiredThreshold: req,
               difficulty,
-              canDrawDiscard: prev.isInitialTapisCard,
+              canDrawDiscard: aiCanDrawDiscard,
+              mustOpenWithDiscard: aiNeedsSecondaryOpen,
             });
 
-        if (source === 'discard' && topDiscard && (isSimple || prev.isInitialTapisCard)) {
+        if (source === 'discard' && topDiscard && (isSimple || aiCanDrawDiscard)) {
           const nextHands = [...prev.hands];
           nextHands[aiIdx] = [...nextHands[aiIdx], topDiscard];
           return {
@@ -945,9 +1067,12 @@ export function useRami72Game(params: {
             turnStep: 'PLAY_OR_DISCARD',
             isInitialTapisCard: false,
             drawnFromDiscardId: topDiscard.id,
+            mustOpenWithDiscardId: aiNeedsSecondaryOpen ? topDiscard.id : null,
             speech: {
               ...prev.speech,
-              [aiIdx]: `Prend ${formatCardShort(topDiscard)}`,
+              [aiIdx]: aiNeedsSecondaryOpen
+                ? `Prend ${formatCardShort(topDiscard)} (étalage)`
+                : `Prend ${formatCardShort(topDiscard)}`,
             },
             soundCue: nextSoundCue(prev, 'snap'),
           };
@@ -983,6 +1108,7 @@ export function useRami72Game(params: {
           discard: nextDiscard,
           turnStep: 'PLAY_OR_DISCARD',
           drawnFromDiscardId: null,
+          mustOpenWithDiscardId: null,
           speech: { ...prev.speech, [aiIdx]: 'Pioche' },
           soundCue: nextSoundCue(prev, 'snap'),
         };
@@ -1086,7 +1212,12 @@ export function useRami72Game(params: {
         // 1. If not opened yet -> check if AI can open legally & beat the current threshold
         if (!nextHasOpened[aiIdx]) {
           const req = getRequiredThreshold(nextHighest);
-          const best = findBestOpeningMelds(hand, aiIdx, req);
+          const best = findBestOpeningMelds(
+            hand,
+            aiIdx,
+            req,
+            prev.mustOpenWithDiscardId
+          );
           if (best.totalPoints >= req && best.melds.length > 0) {
             hand = hand.filter((c) => !best.usedCardIds.has(c.id));
             tableMelds = [...tableMelds, ...best.melds];
@@ -1184,6 +1315,7 @@ export function useRami72Game(params: {
           openedWith: nextOpenedWith,
           highestOpeningScore: nextHighest,
           lastOpenerIndex: nextLastOpener,
+          mustOpenWithDiscardId: null,
         };
 
         if (hand.length === 0) {
@@ -1233,6 +1365,7 @@ export function useRami72Game(params: {
           turnStep: 'DRAW',
           isInitialTapisCard: false,
           drawnFromDiscardId: null,
+          mustOpenWithDiscardId: null,
           speech: {
             ...prev.speech,
             [aiIdx]: actionNote
@@ -1356,8 +1489,13 @@ export function useRami72Game(params: {
     state.discard.length > 0 ? state.discard[state.discard.length - 1] : null;
 
   const stagedOpeningCheck = useMemo<OpeningValidationResult>(
-    () => validateOpeningMelds(stagedMelds, requiredThreshold),
-    [stagedMelds, requiredThreshold]
+    () =>
+      validateOpeningMelds(
+        stagedMelds,
+        requiredThreshold,
+        state.mustOpenWithDiscardId
+      ),
+    [stagedMelds, requiredThreshold, state.mustOpenWithDiscardId]
   );
 
   const directOpeningCheck = useMemo<OpeningValidationResult>(
@@ -1366,9 +1504,15 @@ export function useRami72Game(params: {
         selectedMeldBundle
           ? [...stagedMelds, ...selectedMeldBundle.melds]
           : stagedMelds,
-        requiredThreshold
+        requiredThreshold,
+        state.mustOpenWithDiscardId
       ),
-    [stagedMelds, selectedMeldBundle, requiredThreshold]
+    [
+      stagedMelds,
+      selectedMeldBundle,
+      requiredThreshold,
+      state.mustOpenWithDiscardId,
+    ]
   );
 
   const canDirectOpenWithSelection =
@@ -1427,9 +1571,45 @@ export function useRami72Game(params: {
     state.drawnFromDiscardId,
   ]);
 
+  const canOpenWithSecondaryDiscard = useMemo(() => {
+    if (
+      !isHumanDraw ||
+      isSimple ||
+      humanOpened ||
+      state.isInitialTapisCard ||
+      topDiscard === null
+    ) {
+      return false;
+    }
+    return (
+      findBestOpeningMelds(
+        [...humanHand, topDiscard],
+        0,
+        requiredThreshold,
+        topDiscard.id
+      ).melds.length > 0
+    );
+  }, [
+    isHumanDraw,
+    isSimple,
+    humanOpened,
+    state.isInitialTapisCard,
+    topDiscard,
+    humanHand,
+    requiredThreshold,
+  ]);
+
+  const mustOpenWithDiscardCard = useMemo(
+    () =>
+      !isSimple && isHumanPlay && !humanOpened && state.mustOpenWithDiscardId
+        ? humanHand.find((c) => c.id === state.mustOpenWithDiscardId) ?? null
+        : null,
+    [isSimple, isHumanPlay, humanOpened, state.mustOpenWithDiscardId, humanHand]
+  );
+
   const canDiscardSelected =
     isHumanPlay &&
-    (isSimple || stagedMelds.length === 0) &&
+    (isSimple || (stagedMelds.length === 0 && !state.mustOpenWithDiscardId)) &&
     selectedCards.length === 1 &&
     !(
       state.drawnFromDiscardId === selectedCards[0].id &&
@@ -1437,7 +1617,14 @@ export function useRami72Game(params: {
     );
 
   const canDrawDiscard =
-    isHumanDraw && topDiscard !== null && (isSimple || state.isInitialTapisCard);
+    isHumanDraw &&
+    canPlayerDrawDiscard({
+      isSimple,
+      isInitialTapisCard: state.isInitialTapisCard,
+      hasOpened: humanOpened,
+      hasTopDiscard: topDiscard !== null,
+      canOpenUsingDiscard: canOpenWithSecondaryDiscard,
+    });
 
   const lastDrawnCard = useMemo(
     () =>
@@ -1467,8 +1654,11 @@ export function useRami72Game(params: {
     selectedCards,
     selectedMeldBundle,
     autoCompleteBundle,
+    forcedDiscardOpeningBundle,
     lastDrawnCardId: lastDrawnCard?.id ?? null,
     lastDrawnCard,
+    mustOpenWithDiscardCard,
+    canOpenWithSecondaryDiscard,
     stagedTotalPoints,
     stagedOpeningCheck,
     directOpeningCheck,
@@ -1487,6 +1677,7 @@ export function useRami72Game(params: {
     nudgeHandCard,
     toggleSelectCard,
     handleHumanDraw,
+    handleCancelDiscardDrawForOpen,
     handleStageSelectedMeld,
     handleUnstageMeld,
     handleClearStaging,
